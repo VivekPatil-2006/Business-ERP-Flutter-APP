@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "354108231052",
+    "project_id": "erpsystem-d5608",
+    "storage_bucket": "erpsystem-d5608.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:354108231052:android:3bbee51c2f342635695aa9",
+        "android_client_info": {
+          "package_name": "com.example.dealtrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtaxvgXE3I6o8F8sHZbAn-rf9YxLZ2REQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
