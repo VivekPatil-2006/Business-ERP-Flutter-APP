@@ -70,8 +70,11 @@ class _CreateEnquiryScreenState extends State<CreateEnquiryScreen> {
 
   Future<List<QueryDocumentSnapshot>> fetchProducts() async {
 
+    if (companyId.isEmpty) return [];
+
     final snap = await firestore
         .collection("products")
+        .where("companyId", isEqualTo: companyId)
         .get();
 
     return snap.docs;
@@ -243,7 +246,8 @@ class _CreateEnquiryScreenState extends State<CreateEnquiryScreen> {
               title: "Product Selection",
               icon: Icons.inventory,
               child: FutureBuilder(
-                future: fetchProducts(),
+                future: companyId.isEmpty ? null : fetchProducts(),
+
 
                 builder: (context, snapshot) {
 
@@ -252,6 +256,11 @@ class _CreateEnquiryScreenState extends State<CreateEnquiryScreen> {
                   }
 
                   final products = snapshot.data!;
+
+                  if (products.isEmpty) {
+                    return const Text("No products found for your company");
+                  }
+
 
                   return DropdownButtonFormField(
                     hint: const Text("Choose Product"),

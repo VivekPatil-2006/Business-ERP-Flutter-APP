@@ -331,31 +331,83 @@ class _ClientQuotationDetailsScreenState
     ];
 
     return Row(
-      children: List.generate(steps.length, (index) {
+      children: List.generate(steps.length * 2 - 1, (index) {
 
-        final active = index <= currentStep;
+        // ================= CONNECTING LINE =================
 
-        return Expanded(
-          child: Column(
-            children: [
+        if (index.isOdd) {
+          final stepIndex = index ~/ 2;
 
-              CircleAvatar(
-                radius: 12,
-                backgroundColor:
-                active ? Colors.green : Colors.grey,
+          final isActive = stepIndex < currentStep;
+
+          return Expanded(
+            child: Container(
+              height: 3,
+              color: isActive ? Colors.green : Colors.grey.shade300,
+            ),
+          );
+        }
+
+        // ================= STEP CIRCLE =================
+
+        final step = index ~/ 2;
+
+        final isCompleted = step < currentStep;
+        final isCurrent = step == currentStep;
+
+        Color circleColor = Colors.grey;
+
+        if (isCompleted) circleColor = Colors.green;
+        if (isCurrent) circleColor = AppColors.primaryBlue;
+
+        return Column(
+          children: [
+
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: circleColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  if (isCurrent)
+                    BoxShadow(
+                      color: circleColor.withOpacity(0.4),
+                      blurRadius: 8,
+                    ),
+                ],
               ),
 
-              const SizedBox(height: 5),
-
-              Text(
-                steps[index],
-                style: TextStyle(
-                  fontSize: 11,
-                  color: active ? Colors.green : Colors.grey,
+              child: Center(
+                child: Icon(
+                  isCompleted
+                      ? Icons.check
+                      : Icons.circle,
+                  size: 14,
+                  color: Colors.white,
                 ),
               ),
-            ],
-          ),
+            ),
+
+            const SizedBox(height: 6),
+
+            SizedBox(
+              width: 70,
+              child: Text(
+                steps[step],
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight:
+                  isCurrent ? FontWeight.bold : FontWeight.normal,
+                  color: isCompleted || isCurrent
+                      ? Colors.black
+                      : Colors.grey,
+                ),
+              ),
+            ),
+          ],
         );
       }),
     );

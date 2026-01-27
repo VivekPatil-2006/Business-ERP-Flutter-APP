@@ -63,16 +63,16 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
   Future<String> fetchProductName(String productId) async {
 
-    final snap =
-    await firestore.collection("products").doc(productId).get();
+    final snap = await firestore
+        .collection("products")
+        .doc(productId)
+        .get();
+
+    if (!snap.exists) return "Unknown Product";
 
     final data = snap.data();
 
-    if (snap.exists && data != null && data['name'] != null) {
-      return data['name'];
-    }
-
-    return "Unknown Product";
+    return data?['title'] ?? "Unknown Product";
   }
 
   // ================= CALCULATE =================
@@ -240,14 +240,18 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
                         selectedEnquiryDropdown = val;
 
                         enquiryId = val;
-                        productId = e['productId'];
+                        productId = e['productId'] ?? "";
                         clientId = e['clientId'];
 
                         enquiryTitle = e['title'];
                         enquiryDescription = e['description'];
+
+                        productName = null;
                       });
 
-                      fetchProductName(e['productId']).then((name) {
+                      fetchProductName(productId!).then((name) {
+
+                        if (!mounted) return;
 
                         setState(() {
 

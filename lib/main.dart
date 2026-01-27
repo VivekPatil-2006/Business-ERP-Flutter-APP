@@ -30,7 +30,14 @@ class MyApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
+      builder: (context,child){
+        return MediaQuery(data:MediaQuery.of(context).copyWith(textScaleFactor: 1.21),
+            child:child!,
+        );
+      },
       home: const LoginScreen(),
     );
+
+
   }
 }
