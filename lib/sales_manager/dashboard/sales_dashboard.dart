@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
 
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/theme/app_colors.dart';
 
 class SalesDashboard extends StatefulWidget {
   const SalesDashboard({super.key});
@@ -17,6 +25,8 @@ class _SalesDashboardState extends State<SalesDashboard> {
 
   bool loading = true;
 
+  String managerId = "";
+
   int totalInvoices = 0;
   int paidInvoices = 0;
   int unpaidInvoices = 0;
@@ -24,6 +34,9 @@ class _SalesDashboardState extends State<SalesDashboard> {
   double invoiceTotal = 0;
   double paymentReceived = 0;
   double paymentPending = 0;
+
+  double targetSales = 0;
+  double achievedSales = 0;
 
   List<Map<String, dynamic>> recentInvoices = [];
   Map<String, double> monthlyTotals = {};
@@ -44,20 +57,54 @@ class _SalesDashboardState extends State<SalesDashboard> {
 
       resetValues();
 
+      final authUser = FirebaseAuth.instance.currentUser!;
+      final email = authUser.email;
+
+      // ================= GET SALES MANAGER DOC =================
+
+      final managerQuery = await FirebaseFirestore.instance
+          .collection("sales_managers")
+          .where("email", isEqualTo: email)
+          .limit(1)
+          .get();
+
+      if (managerQuery.docs.isEmpty) {
+        debugPrint("Sales Manager record not found");
+        return;
+      }
+
+      managerId = managerQuery.docs.first.id;
+      final managerData = managerQuery.docs.first.data();
+
+      // ================= TARGET SALES =================
+
+      final rawTarget = managerData['targetSales'];
+
+      if (rawTarget is int) {
+        targetSales = rawTarget.toDouble();
+      } else if (rawTarget is double) {
+        targetSales = rawTarget;
+      }
+
+      // ================= ACHIEVED SALES (LOI SENT) =================
+
+      final quotationSnap = await FirebaseFirestore.instance
+          .collection("quotations")
+          .where("salesManagerId", isEqualTo: managerId)
+          .where("status", isEqualTo: "loi_sent")
+          .get();
+
+      for (var q in quotationSnap.docs) {
+        achievedSales += (q['quotationAmount'] ?? 0).toDouble();
+      }
+
+      // ================= INVOICES =================
+
       final invoiceSnap =
       await FirebaseFirestore.instance.collection("invoices").get();
 
       final paymentSnap =
       await FirebaseFirestore.instance.collection("payments").get();
-
-      // ================= EMPTY STATE → LOAD SAMPLE DATA =================
-
-      if (invoiceSnap.docs.isEmpty && paymentSnap.docs.isEmpty) {
-        loadSampleData();
-        return;
-      }
-
-      // ================= INVOICES =================
 
       totalInvoices = invoiceSnap.docs.length;
 
@@ -101,28 +148,38 @@ class _SalesDashboardState extends State<SalesDashboard> {
 
       // ================= RECENT =================
 
-      final sorted = invoiceSnap.docs.toList()
-        ..sort((a, b) {
+      if (invoiceSnap.docs.isNotEmpty) {
 
-          final aTime = a['createdAt'] ?? Timestamp.now();
-          final bTime = b['createdAt'] ?? Timestamp.now();
+        final sorted = invoiceSnap.docs.toList()
+          ..sort((a, b) {
 
-          return bTime.compareTo(aTime);
-        });
+            final aTime = a['createdAt'] ?? Timestamp.now();
+            final bTime = b['createdAt'] ?? Timestamp.now();
 
-      recentInvoices = sorted.take(5).map((e) => {
-        "invoiceNumber": e['invoiceNumber'],
-        "amount": e['totalAmount'],
-        "date": e['date'],
-      }).toList();
+            return bTime.compareTo(aTime);
+          });
+
+        recentInvoices = sorted.take(5).map((e) => {
+          "invoiceNumber": e['invoiceNumber'] ?? "-",
+          "amount": e['totalAmount'] ?? 0,
+          "date": e['date'] ?? Timestamp.now(),
+        }).toList();
+      }
+
+      if (monthlyTotals.isEmpty || recentInvoices.isEmpty) {
+        loadSampleChartAndRecent();
+      }
 
     } catch (e) {
-      debugPrint("Sales Dashboard Error => $e");
-      loadSampleData();
-    }
 
-    if (mounted) {
-      setState(() => loading = false);
+      debugPrint("Sales Dashboard Error => $e");
+      loadSampleChartAndRecent();
+
+    } finally {
+
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -140,23 +197,18 @@ class _SalesDashboardState extends State<SalesDashboard> {
     paymentReceived = 0;
     paymentPending = 0;
 
+    targetSales = 0;
+    achievedSales = 0;
+
     recentInvoices.clear();
     monthlyTotals.clear();
   }
 
   // =====================================================
-  // SAMPLE DATA (FALLBACK)
+  // SAMPLE PREVIEW
   // =====================================================
 
-  void loadSampleData() {
-
-    totalInvoices = 12;
-    paidInvoices = 8;
-    unpaidInvoices = 4;
-
-    invoiceTotal = 240000;
-    paymentReceived = 180000;
-    paymentPending = 60000;
+  void loadSampleChartAndRecent() {
 
     monthlyTotals = {
       "2025-09": 35000,
@@ -183,12 +235,10 @@ class _SalesDashboardState extends State<SalesDashboard> {
         "date": Timestamp.now(),
       },
     ];
-
-    setState(() => loading = false);
   }
 
   // =====================================================
-  // UI
+  // UI (UNCHANGED)
   // =====================================================
 
   @override
@@ -202,60 +252,14 @@ class _SalesDashboardState extends State<SalesDashboard> {
       child: Column(
         children: [
 
-          // ================= HEADER =================
-
-          Container(
-            padding: const EdgeInsets.all(20),
-            width: double.infinity,
-
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.darkBlue,
-                  AppColors.primaryBlue,
-                ],
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(22),
-                bottomRight: Radius.circular(22),
-              ),
-            ),
-
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-
-                Text(
-                  "Sales Dashboard",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  "Revenue and invoice performance",
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          headerUI(),
 
           const SizedBox(height: 20),
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-
             child: Column(
               children: [
-
-                // ================= KPI GRID =================
 
                 GridView.count(
                   crossAxisCount: 2,
@@ -263,52 +267,47 @@ class _SalesDashboardState extends State<SalesDashboard> {
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.4,
+                  childAspectRatio: 1.3,
 
                   children: [
 
-                    kpiCard("Total Invoices", totalInvoices.toString(),
+                    kpiCard("Target Sales",
+                        "₹ ${targetSales.toStringAsFixed(0)}",
+                        Icons.flag),
+
+                    kpiCard("Achieved Sales",
+                        "₹ ${achievedSales.toStringAsFixed(0)}",
+                        Icons.trending_up),
+
+                    kpiCard("Total Invoices",
+                        totalInvoices.toString(),
                         Icons.receipt_long),
 
-                    kpiCard("Paid Invoices", paidInvoices.toString(),
+                    kpiCard("Paid Invoices",
+                        paidInvoices.toString(),
                         Icons.check_circle),
 
-                    kpiCard("Unpaid Invoices", unpaidInvoices.toString(),
+                    kpiCard("Unpaid Invoices",
+                        unpaidInvoices.toString(),
                         Icons.pending_actions),
 
                     kpiCard("Invoice Total",
                         "₹ ${invoiceTotal.toStringAsFixed(0)}",
                         Icons.account_balance),
-
-                    kpiCard("Payment Received",
-                        "₹ ${paymentReceived.toStringAsFixed(0)}",
-                        Icons.payments),
-
-                    kpiCard("Payment Pending",
-                        "₹ ${paymentPending.toStringAsFixed(0)}",
-                        Icons.hourglass_bottom),
                   ],
                 ),
 
                 const SizedBox(height: 25),
 
-                // ================= CHART =================
-
                 dashboardCard(
                   title: "Monthly Revenue Trend",
-                  child: SizedBox(
-                    height: 220,
-                    child: buildLineChart(),
-                  ),
+                  child: SizedBox(height: 220, child: buildLineChart()),
                 ),
 
                 const SizedBox(height: 25),
 
-                // ================= RECENT =================
-
                 dashboardCard(
                   title: "Recent Invoices",
-
                   child: Column(
                     children: recentInvoices.map((inv) {
 
@@ -317,34 +316,20 @@ class _SalesDashboardState extends State<SalesDashboard> {
 
                       return ListTile(
                         dense: true,
-
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.green,
-                          child: Icon(
-                            Icons.receipt,
-                            size: 18,
-                            color: Colors.white,
-                          ),
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.primaryBlue,
+                          child: const Icon(Icons.receipt,
+                              size: 18, color: Colors.white),
                         ),
-
                         title: Text(inv['invoiceNumber']),
-
-                        subtitle: Text(
-                          DateFormat.yMMMd().format(date),
-                        ),
-
-                        trailing: Text(
-                          "₹ ${inv['amount']}",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        subtitle: Text(DateFormat.yMMMd().format(date)),
+                        trailing: Text("₹ ${inv['amount']}",
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold)),
                       );
                     }).toList(),
                   ),
                 ),
-
-                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -353,54 +338,110 @@ class _SalesDashboardState extends State<SalesDashboard> {
     );
   }
 
+  // ================= UI HELPERS =================
+
+  Widget headerUI() {
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.darkBlue, AppColors.primaryBlue],
+        ),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(22),
+          bottomRight: Radius.circular(22),
+        ),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Sales Dashboard",
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold)),
+          SizedBox(height: 6),
+          Text("Revenue and invoice performance",
+              style: TextStyle(color: Colors.white70)),
+        ],
+      ),
+    );
+  }
+
   // =====================================================
-  // KPI CARD
+  // KPI CARD (UNCHANGED UI)
   // =====================================================
 
   Widget kpiCard(String title, String value, IconData icon) {
+
+    final parts = title.split(" ");
 
     return Container(
       padding: const EdgeInsets.all(14),
 
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
 
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: AppColors.primaryBlue.withOpacity(0.1),
-            child: Icon(icon,
-                size: 18,
-                color: AppColors.primaryBlue),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+
+                    Text(parts.first,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        )),
+
+                    if (parts.length > 1)
+                      Text(parts.sublist(1).join(" "),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          )),
+                  ],
+                ),
+              ),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryBlue.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon,
+                    size: 30,
+                    color: AppColors.primaryBlue),
+              ),
+            ],
           ),
 
-          const Spacer(),
-
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
-            ),
-          ),
-
-          const SizedBox(height: 4),
+          const SizedBox(height: 10),
 
           Text(
             value,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -437,12 +478,8 @@ class _SalesDashboardState extends State<SalesDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(title,
+              style: const TextStyle(fontWeight: FontWeight.bold)),
 
           const SizedBox(height: 12),
 
@@ -458,10 +495,6 @@ class _SalesDashboardState extends State<SalesDashboard> {
 
   Widget buildLineChart() {
 
-    if (monthlyTotals.isEmpty) {
-      return const Center(child: Text("No Revenue Data"));
-    }
-
     final keys = monthlyTotals.keys.toList()..sort();
 
     final spots = <FlSpot>[];
@@ -470,10 +503,6 @@ class _SalesDashboardState extends State<SalesDashboard> {
       spots.add(
         FlSpot(i.toDouble(), monthlyTotals[keys[i]]!),
       );
-    }
-
-    if (spots.length == 1) {
-      spots.add(FlSpot(spots.first.x + 1, spots.first.y));
     }
 
     final maxY =

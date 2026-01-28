@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/theme/app_colors.dart';
 
-
 class CreateQuotationScreen extends StatefulWidget {
   const CreateQuotationScreen({super.key});
 
@@ -59,23 +58,40 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
     return snap.docs;
   }
 
-  // ================= FETCH PRODUCT =================
+  // ================= FETCH PRODUCT DETAILS =================
 
-  Future<String> fetchProductName(String productId) async {
+  Future<void> fetchProductDetails(String productId) async {
 
     final snap = await firestore
         .collection("products")
         .doc(productId)
         .get();
 
-    if (!snap.exists) return "Unknown Product";
+    if (!snap.exists) return;
 
-    final data = snap.data();
+    final data = snap.data()!;
 
-    return data?['title'] ?? "Unknown Product";
+    final basePrice =
+    (data['pricing']?['basePrice'] ?? 0).toDouble();
+
+    final discountPercent =
+    (data['discountPercent'] ?? 0).toDouble();
+
+    setState(() {
+
+      productName = data['title'] ?? "Product";
+
+      // ✅ Auto fill base price
+      baseCtrl.text = basePrice.toStringAsFixed(0);
+
+      // ✅ Auto fill product discount
+      discountCtrl.text = discountPercent.toStringAsFixed(0);
+    });
+
+    calculateFinal();
   }
 
-  // ================= CALCULATE =================
+  // ================= CALCULATE FINAL =================
 
   void calculateFinal() {
 
@@ -122,12 +138,14 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
         "clientId": clientId,
         "salesManagerId": userId,
 
+        // ================= SNAPSHOT =================
+
         "productSnapshot": {
 
           "productId": productId,
           "productName": productName,
 
-          "baseFees": double.parse(baseCtrl.text),
+          "basePrice": double.parse(baseCtrl.text),
           "discountPercent": double.parse(discountCtrl.text),
           "cgstPercent": double.parse(cgstCtrl.text),
           "sgstPercent": double.parse(sgstCtrl.text),
@@ -136,6 +154,7 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
         },
 
         "quotationAmount": finalAmount,
+
         "status": "sent",
 
         "pdfUrl": "",
@@ -165,6 +184,7 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
     } catch (e) {
 
+      debugPrint("Quotation Error => $e");
       showMsg("Error sending quotation");
 
     } finally {
@@ -240,7 +260,7 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
                         selectedEnquiryDropdown = val;
 
                         enquiryId = val;
-                        productId = e['productId'] ?? "";
+                        productId = e['productId'];
                         clientId = e['clientId'];
 
                         enquiryTitle = e['title'];
@@ -249,16 +269,11 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
                         productName = null;
                       });
 
-                      fetchProductName(productId!).then((name) {
+                      fetchProductDetails(productId!).then((_) {
 
                         if (!mounted) return;
 
-                        setState(() {
-
-                          productName = name;
-                          loadingProduct = false;
-
-                        });
+                        setState(() => loadingProduct = false);
                       });
                     },
                   );
@@ -372,12 +387,13 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
             const SizedBox(height: 30),
 
-            // ================= SEND BUTTON =================
+            // ================= SEND =================
 
             SizedBox(
               width: double.infinity,
 
               child: ElevatedButton.icon(
+
                 icon: sending
                     ? const SizedBox(
                   height: 18,
@@ -396,7 +412,6 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.darkBlue,
-                  foregroundColor: Colors.white, // 👈 THIS makes text + icon white
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
 
@@ -429,8 +444,7 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
         children: [
 
           Text(title,
-              style:
-              const TextStyle(fontWeight: FontWeight.bold)),
+              style: const TextStyle(fontWeight: FontWeight.bold)),
 
           const SizedBox(height: 10),
 

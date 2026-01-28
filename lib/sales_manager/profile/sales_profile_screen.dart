@@ -186,8 +186,6 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
 
             buildField("Address", addressCtrl),
 
-            buildField("New Password", passwordCtrl,
-                isPassword: true),
 
             const SizedBox(height: 20),
 

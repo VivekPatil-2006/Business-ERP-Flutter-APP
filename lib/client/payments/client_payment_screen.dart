@@ -340,6 +340,7 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
         DropdownMenuItem(value: "net_banking", child: Text("Net Banking")),
         DropdownMenuItem(value: "cash", child: Text("Cash")),
         DropdownMenuItem(value: "cheque", child: Text("Cheque")),
+        DropdownMenuItem(value: "cheque", child: Text("DD")),
       ],
       onChanged: (val) {
         setState(() => paymentMode = val!);
