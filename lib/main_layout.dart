@@ -1,11 +1,15 @@
-import 'package:dealtrackuser/sales_manager/clients/client_list_screen.dart';
-import 'package:dealtrackuser/sales_manager/dashboard/sales_dashboard.dart';
-import 'package:dealtrackuser/sales_manager/enquiries/create_enquiry_screen.dart';
-import 'package:dealtrackuser/sales_manager/invoices/invoice_home_screen.dart';
-import 'package:dealtrackuser/sales_manager/loi/loi_ack_screen.dart';
-import 'package:dealtrackuser/sales_manager/payments/payment_list_screen.dart';
-import 'package:dealtrackuser/sales_manager/profile/sales_profile_screen.dart';
-import 'package:dealtrackuser/sales_manager/quotations/create_quotation_screen.dart';
+//import 'package:dealtrack/sales_manager/enquiries/sales_enquiry_list_screen.dart';
+
+import 'sales_manager/clients/client_list_screen.dart';
+import 'sales_manager/dashboard/sales_dashboard.dart';
+import 'sales_manager/enquiries/create_enquiry_screen.dart';
+import 'sales_manager/invoices/invoice_home_screen.dart';
+import 'sales_manager/loi/loi_ack_screen.dart';
+import 'sales_manager/payments/payment_list_screen.dart';
+import 'sales_manager/profile/sales_profile_screen.dart';
+import 'sales_manager/quotations/create_quotation_screen.dart';
+import 'sales_manager/enquiries/sales_enquiry_list_screen.dart';
+import 'sales_manager/quotations/quotation_list_sales.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,7 +22,8 @@ import 'client/profile/client_profile_screen.dart';
 import 'client/quotations/client_quotation_list_screen.dart';
 import 'core/theme/app_colors.dart';
 import 'core/services/auth_service.dart';
-import 'comman/login_screen.dart';
+
+// import 'comman/login_screen.dart';
 
 // // SALES MANAGER
 import 'sales_manager/dashboard/sales_dashboard.dart';
@@ -40,6 +45,8 @@ import 'client/dashboard/client_dashboard.dart';
 // // COMMON
 // import '../invoice/invoice_home_screen.dart';
 // import '../notification/notification_list_screen.dart';
+
+import 'auth/login/admin_login_screen.dart';
 
 class MainLayout extends StatefulWidget {
   final String role;
@@ -68,7 +75,21 @@ class _MainLayoutState extends State<MainLayout> {
     return Scaffold(
 
       appBar: AppBar(
-        title: Text(widget.role.toUpperCase()),
+        backgroundColor: AppColors.darkBlue, // navy blue
+        foregroundColor: Colors.white,
+        elevation: 0,
+
+        iconTheme: const IconThemeData(
+          color: Colors.white, // drawer/back icon color
+        ),
+
+        title: Text(
+          widget.role.toUpperCase(), // CLIENT / SALES_MANAGER
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
 
       drawer: Drawer(
@@ -100,15 +121,26 @@ class _MainLayoutState extends State<MainLayout> {
               ),
 
               buildMenuTile(
-                "Create Enquiry",
-                Icons.assignment_add,
-                    () => push(const CreateEnquiryScreen()),
+                "Enquiry",
+                Icons.description,
+                    () => push(const SalesEnquiryListScreen()),
               ),
 
+              // buildMenuTile(
+              //   "Create Enquiry",
+              //   Icons.assignment_add,
+              //       () => push(const CreateEnquiryScreen()),
+              // ),
+
+              // buildMenuTile(
+              //   "Send Quotation",
+              //   Icons.description,
+              //       () => push(const CreateQuotationScreen()),
+              // ),
               buildMenuTile(
-                "Send Quotation",
-                Icons.description,
-                    () => push(const CreateQuotationScreen()),
+                "Quotation",
+                  Icons.description,
+                    () => push(const QuotationListSales()),
               ),
 
               buildMenuTile(
@@ -117,11 +149,11 @@ class _MainLayoutState extends State<MainLayout> {
                     () => push(const LoiAckScreen()),
               ),
 
-              buildMenuTile(
-                "Payments",
-                Icons.payment,
-                    () => push(const PaymentListScreen()),
-              ),
+              // buildMenuTile(
+              //   "Payments",
+              //   Icons.payment,
+              //       () => push(const PaymentListScreen()),
+              // ),
 
               buildMenuTile(
                 "Invoices",
@@ -363,7 +395,7 @@ class _MainLayoutState extends State<MainLayout> {
 
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
           (_) => false,
     );
   }

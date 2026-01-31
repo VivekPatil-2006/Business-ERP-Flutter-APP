@@ -6,7 +6,6 @@ import '../../client/profile/client_profile_screen.dart';
 import '../../core/theme/app_colors.dart';
 import 'create_client_screen.dart';
 
-
 class ClientListScreen extends StatefulWidget {
   const ClientListScreen({super.key});
 
@@ -34,6 +33,8 @@ class _ClientListScreenState extends State<ClientListScreen> {
         .collection("sales_managers")
         .doc(uid)
         .get();
+
+    if (!mounted) return;
 
     setState(() {
       companyId = snap.data()?['companyId'] ?? "";
@@ -78,9 +79,21 @@ class _ClientListScreenState extends State<ClientListScreen> {
     return Scaffold(
 
       appBar: AppBar(
-        title: const Text("Clients"),
         backgroundColor: AppColors.darkBlue,
+
+        iconTheme: const IconThemeData(
+          color: Colors.white, // back arrow / menu icon
+        ),
+
+        title: const Text(
+          "Clients",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold, // 👈 makes it bold
+          ),
+        ),
       ),
+
 
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primaryBlue,
@@ -135,18 +148,18 @@ class _ClientListScreenState extends State<ClientListScreen> {
 
               builder: (context, snapshot) {
 
-                if (!snapshot.hasData) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                       child: CircularProgressIndicator());
                 }
 
-                final docs = snapshot.data!.docs;
-
-                if (docs.isEmpty) {
+                if (!snapshot.hasData ||
+                    snapshot.data!.docs.isEmpty) {
                   return const Center(child: Text("No Clients Found"));
                 }
 
-                // Apply Search Filter
+                final docs = snapshot.data!.docs;
+
                 final clients = docs.where((doc) {
 
                   final data =

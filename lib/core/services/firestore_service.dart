@@ -2,25 +2,29 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FirestoreService {
 
-  final _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   Future<String?> getUserRole(String uid) async {
 
-    // Check Sales Manager
-    final manager = await _db
+    // SALES MANAGER CHECK
+    final managerSnap = await _db
         .collection('sales_managers')
         .doc(uid)
         .get();
 
-    if (manager.exists) return "sales_manager";
+    if (managerSnap.exists) {
+      return "sales_manager";
+    }
 
-    // Check Client
-    final client = await _db
+    // CLIENT CHECK
+    final clientSnap = await _db
         .collection('clients')
         .doc(uid)
         .get();
 
-    if (client.exists) return "client";
+    if (clientSnap.exists) {
+      return "client";
+    }
 
     return null;
   }

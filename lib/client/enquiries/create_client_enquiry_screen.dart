@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/services/notification_service.dart';
 import '../../core/theme/app_colors.dart';
@@ -21,22 +22,28 @@ class _CreateClientEnquiryScreenState
 
   final titleCtrl = TextEditingController();
   final descCtrl = TextEditingController();
+  final qtyCtrl = TextEditingController(text: "1");
 
   String companyId = "";
+  String salesManagerId = "";
+
 
   String? selectedProductId;
   Map<String, dynamic>? selectedProductData;
 
-  // ✅ Source of enquiry
+  // ✅ Source
   String? selectedSource;
 
-  final List<String> enquirySources = [
-    "Email",
-    "Phone",
-    "Walk-in",
-    "Reference",
-    "Other",
+  final List<Map<String, String>> enquirySources = [
+    {"label": "By Walkin", "value": "by walkin"},
+    {"label": "By Email", "value": "by email"},
+    {"label": "By Phone", "value": "by phone"},
+    {"label": "By Reference", "value": "by reference"},
+    {"label": "Other", "value": "other"},
   ];
+
+  // ✅ Expected Date
+  DateTime? expectedDate;
 
   bool loading = false;
   bool pageLoading = true;
@@ -58,6 +65,9 @@ class _CreateClientEnquiryScreenState
 
     companyId = snap.data()?['companyId'] ?? "";
 
+    // ✅ NEW
+    salesManagerId = snap.data()?['salesManagerId'] ?? "";
+
     setState(() => pageLoading = false);
   }
 
@@ -68,9 +78,26 @@ class _CreateClientEnquiryScreenState
     final snap = await firestore
         .collection("products")
         .where("companyId", isEqualTo: companyId)
+        .where("active", isEqualTo: true)
         .get();
 
     return snap.docs;
+  }
+
+  // ================= DATE PICKER =================
+
+  Future<void> pickExpectedDate() async {
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (picked != null) {
+      setState(() => expectedDate = picked);
+    }
   }
 
   // ================= CREATE ENQUIRY =================
@@ -87,6 +114,11 @@ class _CreateClientEnquiryScreenState
       return;
     }
 
+    if (expectedDate == null) {
+      showMsg("Select expected date");
+      return;
+    }
+
     if (titleCtrl.text.trim().isEmpty) {
       showMsg("Enter enquiry title");
       return;
@@ -94,6 +126,13 @@ class _CreateClientEnquiryScreenState
 
     if (descCtrl.text.trim().isEmpty) {
       showMsg("Enter enquiry description");
+      return;
+    }
+
+    final qty = int.tryParse(qtyCtrl.text) ?? 0;
+
+    if (qty <= 0) {
+      showMsg("Enter valid quantity");
       return;
     }
 
@@ -111,19 +150,26 @@ class _CreateClientEnquiryScreenState
 
         "companyId": companyId,
         "clientId": clientId,
-        "salesManagerId": "",
+        "salesManagerId": salesManagerId,
+
 
         "productId": selectedProductId,
+        "quantity": qty,
 
-        // ✅ NEW FIELD
+        "productSnapshot": selectedProductData,
+
+        // ✅ normalized source
         "source": selectedSource,
+
+        // ✅ expected date
+        "expectedDate": Timestamp.fromDate(expectedDate!),
 
         "status": "raised",
         "createdAt": Timestamp.now(),
       });
 
       await NotificationService().sendNotification(
-        userId: "admin",
+        userId: salesManagerId,
         role: "sales_manager",
         title: "New Client Enquiry",
         message: "Client submitted new enquiry",
@@ -135,11 +181,13 @@ class _CreateClientEnquiryScreenState
 
       titleCtrl.clear();
       descCtrl.clear();
+      qtyCtrl.text = "1";
 
       setState(() {
         selectedProductId = null;
         selectedProductData = null;
         selectedSource = null;
+        expectedDate = null;
       });
 
     } catch (e) {
@@ -166,8 +214,12 @@ class _CreateClientEnquiryScreenState
     return Scaffold(
 
       appBar: AppBar(
-        title: const Text("Create Enquiry"),
+        title: const Text(
+          "Create Enquiry",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: AppColors.darkBlue,
+        foregroundColor: Colors.white,
       ),
 
       bottomNavigationBar: Padding(
@@ -192,10 +244,7 @@ class _CreateClientEnquiryScreenState
           )
               : const Text(
             "SUBMIT ENQUIRY",
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.white,
-            ),
+            style: TextStyle(fontSize: 16, color: Colors.white),
           ),
         ),
       ),
@@ -210,7 +259,7 @@ class _CreateClientEnquiryScreenState
           child: Column(
             children: [
 
-              // ================= PRODUCT DROPDOWN =================
+              // ================= PRODUCT =================
 
               FutureBuilder<List<QueryDocumentSnapshot>>(
                 future: fetchProducts(),
@@ -226,26 +275,22 @@ class _CreateClientEnquiryScreenState
                   return DropdownButtonFormField<String>(
                     value: selectedProductId,
 
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: "Select Product",
-                      prefixIcon: const Icon(Icons.shopping_bag),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      prefixIcon: Icon(Icons.shopping_bag),
+                      border: OutlineInputBorder(),
                     ),
 
                     items: products.map((p) {
-
                       final data = p.data() as Map<String, dynamic>;
 
-                      return DropdownMenuItem<String>(
+                      return DropdownMenuItem(
                         value: p.id,
                         child: Text(data['title'] ?? "Product"),
                       );
-
                     }).toList(),
 
-                    onChanged: (String? val) async {
+                    onChanged: (val) async {
 
                       if (val == null) return;
 
@@ -267,36 +312,39 @@ class _CreateClientEnquiryScreenState
                 },
               ),
 
-              // ================= PRODUCT PREVIEW =================
-
               if (selectedProductData != null) ...[
+                const SizedBox(height: 12),
+                buildProductPreview(selectedProductData!),
 
                 const SizedBox(height: 12),
 
-                buildProductPreview(selectedProductData!),
+                buildInput(
+                  controller: qtyCtrl,
+                  label: "Product Quantity",
+                  icon: Icons.production_quantity_limits,
+                  isNumber: true,
+                ),
               ],
-
-              // ================= ENQUIRY SOURCE =================
 
               if (selectedProductId != null) ...[
 
                 const SizedBox(height: 14),
 
+                // ================= SOURCE =================
+
                 DropdownButtonFormField<String>(
                   value: selectedSource,
 
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: "Source Of Enquiry",
-                    prefixIcon: const Icon(Icons.source),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    prefixIcon: Icon(Icons.source),
+                    border: OutlineInputBorder(),
                   ),
 
                   items: enquirySources.map((e) {
                     return DropdownMenuItem(
-                      value: e,
-                      child: Text(e),
+                      value: e['value'],
+                      child: Text(e['label']!),
                     );
                   }).toList(),
 
@@ -305,7 +353,29 @@ class _CreateClientEnquiryScreenState
                   },
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
+
+                // ================= EXPECTED DATE =================
+
+                InkWell(
+                  onTap: pickExpectedDate,
+
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: "Expected Date",
+                      prefixIcon: Icon(Icons.calendar_month),
+                      border: OutlineInputBorder(),
+                    ),
+
+                    child: Text(
+                      expectedDate == null
+                          ? "Select Date"
+                          : DateFormat.yMMMd().format(expectedDate!),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
 
                 buildInput(
                   controller: titleCtrl,
@@ -329,13 +399,16 @@ class _CreateClientEnquiryScreenState
     );
   }
 
-  // ================= PRODUCT CARD =================
+  // ================= PRODUCT PREVIEW =================
 
   Widget buildProductPreview(Map<String, dynamic> p) {
 
+    final pricing = p['pricing'] ?? {};
+    final payment = p['paymentTerms'] ?? {};
+    final specs = p['specifications'] ?? [];
+
     return Container(
       padding: const EdgeInsets.all(12),
-
       decoration: BoxDecoration(
         color: AppColors.lightGrey,
         borderRadius: BorderRadius.circular(12),
@@ -346,25 +419,26 @@ class _CreateClientEnquiryScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          Text(
-            p['title'] ?? "Product",
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
+          Text(p['title'] ?? "Product",
+              style: const TextStyle(fontWeight: FontWeight.bold)),
 
           const Divider(),
 
-          infoRow("Price", "₹ ${p['pricing']?['basePrice'] ?? '-'}"),
+          infoRow("Base Price", "₹ ${pricing['basePrice'] ?? '-'}"),
+          infoRow("Discount", "${p['discountPercent'] ?? 0}%"),
           infoRow("Stock", p['stock']?.toString() ?? "-"),
-          infoRow("Size", p['size'] ?? "-"),
+          infoRow("Delivery", "${p['deliveryTerms'] ?? '-'} months"),
 
-          if (p['description'] != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(p['description']),
-            ),
+          infoRow("Advance %", payment['advancePaymentPercent']?.toString() ?? "-"),
+          infoRow("Final %", payment['finalPaymentPercent']?.toString() ?? "-"),
+
+          if (specs is List && specs.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            const Text("Specifications",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            ...specs.map((s) =>
+                infoRow(s['name'] ?? "-", s['value']?.toString() ?? "-")),
+          ],
         ],
       ),
     );
@@ -373,24 +447,18 @@ class _CreateClientEnquiryScreenState
   Widget infoRow(String label, String value) {
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
 
       child: Row(
         children: [
-          SizedBox(
-            width: 110,
-            child: Text(
-              "$label:",
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
+          SizedBox(width: 130,
+              child: Text("$label:",
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
           Expanded(child: Text(value)),
         ],
       ),
     );
   }
-
-  // ================= UI HELPERS =================
 
   Widget buildCard({
     required String title,
@@ -400,7 +468,6 @@ class _CreateClientEnquiryScreenState
 
     return Container(
       padding: const EdgeInsets.all(14),
-
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -414,10 +481,8 @@ class _CreateClientEnquiryScreenState
             children: [
               Icon(icon, color: AppColors.darkBlue),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
 
@@ -434,18 +499,19 @@ class _CreateClientEnquiryScreenState
     required String label,
     required IconData icon,
     int maxLines = 1,
+    bool isNumber = false,
   }) {
 
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      keyboardType:
+      isNumber ? TextInputType.number : TextInputType.text,
 
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: const OutlineInputBorder(),
       ),
     );
   }
@@ -459,6 +525,7 @@ class _CreateClientEnquiryScreenState
   void dispose() {
     titleCtrl.dispose();
     descCtrl.dispose();
+    qtyCtrl.dispose();
     super.dispose();
   }
 }

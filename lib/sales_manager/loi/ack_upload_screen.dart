@@ -7,7 +7,6 @@ import '../../core/services/cloudinary_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/theme/app_colors.dart';
 
-
 class AckUploadScreen extends StatefulWidget {
 
   final String quotationId;
@@ -32,7 +31,7 @@ class _AckUploadScreenState extends State<AckUploadScreen> {
   // PICK FILE
   // ======================
 
-  pickFile() async {
+  Future<void> pickFile() async {
 
     final picked =
     await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -48,54 +47,72 @@ class _AckUploadScreenState extends State<AckUploadScreen> {
   // SUBMIT ACK
   // ======================
 
-  submitAck() async {
+  Future<void> submitAck() async {
 
     if (ackFile == null) return;
 
-    setState(() => loading = true);
+    try {
 
-    // Upload to Cloudinary
-    final ackUrl =
-    await CloudinaryService().uploadFile(ackFile!);
+      setState(() => loading = true);
 
-    // Save ACK record
-    await FirebaseFirestore.instance.collection("acknowledgements").add({
+      // Upload to Cloudinary
+      final ackUrl =
+      await CloudinaryService().uploadFile(ackFile!);
 
-      "quotationId": widget.quotationId,
-      "clientId": widget.clientId,
+      // Save ACK record
+      await FirebaseFirestore.instance
+          .collection("acknowledgements")
+          .add({
 
-      "pdfUrl": ackUrl,
-      "status": "sent",
+        "quotationId": widget.quotationId,
+        "clientId": widget.clientId,
 
-      "createdAt": Timestamp.now(),
-    });
+        "pdfUrl": ackUrl,
+        "status": "sent",
 
-    // Update quotation status
-    await FirebaseFirestore.instance
-        .collection("quotations")
-        .doc(widget.quotationId)
-        .update({
+        "createdAt": Timestamp.now(),
+      });
 
-      "status": "ack_sent",
-      "updatedAt": Timestamp.now(),
-    });
+      // Update quotation
+      await FirebaseFirestore.instance
+          .collection("quotations")
+          .doc(widget.quotationId)
+          .update({
 
-    // Notify Client
-    await NotificationService().sendNotification(
+        "ackPdfUrl": ackUrl,
+        "updatedAt": Timestamp.now(),
+      });
 
-      userId: widget.clientId,
-      role: "client",
+      // Notify client
+      await NotificationService().sendNotification(
 
-      title: "Acknowledgement Received",
-      message: "Sales manager sent acknowledgement letter",
+        userId: widget.clientId,
+        role: "client",
 
-      type: "ack",
-      referenceId: widget.quotationId,
-    );
+        title: "Acknowledgement Letter",
+        message: "Acknowledgement letter has been sent",
 
-    setState(() => loading = false);
+        type: "ack",
+        referenceId: widget.quotationId,
+      );
 
-    Navigator.pop(context);
+      if (!mounted) return;
+      Navigator.pop(context);
+
+    } catch (e) {
+
+      debugPrint("ACK Upload Error => $e");
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to upload ACK")),
+      );
+
+    } finally {
+
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
   }
 
   // ======================
@@ -143,7 +160,7 @@ class _AckUploadScreenState extends State<AckUploadScreen> {
                 onPressed: loading ? null : submitAck,
 
                 child: loading
-                    ? const CircularProgressIndicator()
+                    ? const CircularProgressIndicator(color: Colors.white)
                     : const Text("SEND ACK"),
               ),
             ),

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/pdf/pdf_utils.dart';
-
 class LoiFileViewer extends StatelessWidget {
 
   final String url;
@@ -16,16 +14,16 @@ class LoiFileViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
 
-    if (fileType == "pdf") {
-      PdfUtils.openPdf(url);
-      return const SizedBox();
-    }
-
     return Scaffold(
       appBar: AppBar(title: const Text("View LOI")),
 
       body: Center(
-        child: InteractiveViewer(
+
+        child: fileType == "pdf"
+
+            ? const Text("PDF opened externally")
+
+            : InteractiveViewer(
           child: Image.network(
             url,
             fit: BoxFit.contain,

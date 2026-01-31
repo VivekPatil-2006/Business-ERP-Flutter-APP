@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
 
-
 class ClientEnquiryDetailsScreen extends StatelessWidget {
 
   final String enquiryId;
@@ -24,8 +23,6 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
         return Colors.orange;
       case "quoted":
         return Colors.blue;
-      case "closed":
-        return Colors.green;
       default:
         return Colors.grey;
     }
@@ -48,18 +45,12 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
 
         builder: (context, snapshot) {
 
-          // -------- Loading --------
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
-          // -------- Not Found --------
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(
-              child: Text("Enquiry not found"),
-            );
+            return const Center(child: Text("Enquiry not found"));
           }
 
           final data =
@@ -80,51 +71,47 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
 
-                // ================= STATUS BADGE =================
+                // ================= STATUS =================
 
-                Align(
-                  alignment: Alignment.centerLeft,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 6),
 
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: getStatusColor(status).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
 
-                    decoration: BoxDecoration(
-                      color: getStatusColor(status).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-
-                    child: Text(
-                      status.toUpperCase(),
-                      style: TextStyle(
-                        color: getStatusColor(status),
-                        fontWeight: FontWeight.bold,
-                      ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                      color: getStatusColor(status),
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
 
                 const SizedBox(height: 18),
 
-                // ================= ENQUIRY INFO =================
+                // ================= ENQUIRY =================
 
                 buildSection("Enquiry Information", [
 
                   infoRow("Title", data['title']),
                   infoRow("Description", data['description']),
+                  infoRow("Quantity", data['quantity']?.toString()),
 
                   infoRow(
                     "Created On",
                     DateFormat.yMMMd().format(createdAt),
                   ),
 
-                  infoRow("Source", data['source'] ?? "Mobile App"),
-
+                  infoRow("Source", data['source'] ?? "-"),
                 ]),
 
-                // ================= PRODUCT INFO =================
+                // ================= PRODUCT =================
 
-                if (productId != null && productId.toString().isNotEmpty)
+                if (productId != null)
 
                   FutureBuilder<DocumentSnapshot>(
                     future: FirebaseFirestore.instance
@@ -137,32 +124,26 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
                       if (!productSnap.hasData ||
                           !productSnap.data!.exists) {
 
-                        return buildSection("Product", [
-                          infoRow("Product", "Not available"),
+                        return buildSection("Product Details", [
+                          infoRow("Product", "Not Available"),
                         ]);
                       }
 
                       final product =
                       productSnap.data!.data() as Map<String, dynamic>;
 
+                      final pricing = product['pricing'] ?? {};
+
                       return buildSection("Product Details", [
 
                         infoRow("Name", product['title']),
-                        infoRow("Price",
-                            "₹ ${product['price'] ?? 0}"),
-
+                        infoRow(
+                          "Base Price",
+                          "₹ ${pricing['basePrice'] ?? 0}",
+                        ),
                       ]);
                     },
                   ),
-
-                // ================= SALES MANAGER =================
-
-                buildSection("Assigned Sales Manager", [
-
-                  infoRow("Sales Manager ID",
-                      data['salesManagerId'] ?? "-"),
-
-                ]),
               ],
             ),
           );
@@ -172,7 +153,7 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
   }
 
   // ======================
-  // SECTION CARD
+  // UI HELPERS
   // ======================
 
   Widget buildSection(String title, List<Widget> children) {
@@ -200,9 +181,8 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+                fontWeight: FontWeight.bold,
+                fontSize: 16),
           ),
 
           const Divider(),
@@ -212,10 +192,6 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
       ),
     );
   }
-
-  // ======================
-  // INFO ROW
-  // ======================
 
   Widget infoRow(String label, dynamic value) {
 
@@ -231,8 +207,7 @@ class ClientEnquiryDetailsScreen extends StatelessWidget {
             child: Text(
               "$label:",
               style: const TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
+                  fontWeight: FontWeight.w600),
             ),
           ),
 

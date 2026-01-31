@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 class PaymentListScreen extends StatefulWidget {
@@ -11,10 +12,67 @@ class PaymentListScreen extends StatefulWidget {
 
 class _PaymentListScreenState extends State<PaymentListScreen> {
 
+  final firestore = FirebaseFirestore.instance;
+  final auth = FirebaseAuth.instance;
+
   String searchText = "";
+
+  String companyId = "";
+  bool loadingCompany = true;
+
+  final Map<String, Map<String, dynamic>> clientCache = {};
+
+  // ================= INIT =================
+
+  @override
+  void initState() {
+    super.initState();
+    loadCompanyId();
+  }
+
+  // ================= LOAD SALES MANAGER COMPANY =================
+
+  Future<void> loadCompanyId() async {
+
+    final uid = auth.currentUser!.uid;
+
+    final snap = await firestore
+        .collection("sales_managers")
+        .doc(uid)
+        .get();
+
+    companyId = snap.data()?['companyId'] ?? "";
+
+    setState(() => loadingCompany = false);
+  }
+
+  // ================= FETCH CLIENT (CACHE) =================
+
+  Future<Map<String, dynamic>?> fetchClient(String id) async {
+
+    if (clientCache.containsKey(id)) {
+      return clientCache[id];
+    }
+
+    final snap = await firestore
+        .collection("clients")
+        .doc(id)
+        .get();
+
+    if (!snap.exists) return null;
+
+    clientCache[id] = snap.data()!;
+    return clientCache[id];
+  }
 
   @override
   Widget build(BuildContext context) {
+
+    if (loadingCompany) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
 
@@ -25,10 +83,11 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
       body: Column(
         children: [
 
-          // ================= SEARCH BAR =================
+          // ================= SEARCH =================
 
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+
             child: TextField(
               decoration: InputDecoration(
                 hintText: "Search Invoice Number",
@@ -42,7 +101,8 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
               ),
 
               onChanged: (val) {
-                setState(() => searchText = val.trim().toLowerCase());
+                setState(() =>
+                searchText = val.trim().toLowerCase());
               },
             ),
           ),
@@ -52,22 +112,46 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
 
-              stream: FirebaseFirestore.instance
+              stream: firestore
                   .collection("payments")
+                  .where("companyId", isEqualTo: companyId) // ✅ COMPANY FILTER
                   .orderBy("createdAt", descending: true)
                   .snapshots(),
 
               builder: (context, snapshot) {
 
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                if (snapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return const Center(
+                      child: CircularProgressIndicator());
                 }
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("No Payments Found"));
+                if (!snapshot.hasData ||
+                    snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                      child: Text("No Payments Found"));
                 }
 
-                final payments = snapshot.data!.docs;
+                // ================= SEARCH FILTER =================
+
+                final payments = snapshot.data!.docs.where((doc) {
+
+                  final data =
+                  doc.data() as Map<String, dynamic>;
+
+                  final invoice =
+                  (data['invoiceNumber'] ?? "")
+                      .toString()
+                      .toLowerCase();
+
+                  return invoice.contains(searchText);
+
+                }).toList();
+
+                if (payments.isEmpty) {
+                  return const Center(
+                      child: Text("No Matching Records"));
+                }
 
                 return ListView.builder(
 
@@ -78,72 +162,60 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                   itemBuilder: (context, index) {
 
                     final pay = payments[index];
-                    final payData = pay.data() as Map<String, dynamic>;
+                    final payData =
+                    pay.data() as Map<String, dynamic>;
 
-                    // ---------------- REQUIRED FIELDS ----------------
+                    final clientId = payData['clientId'];
 
-                    if (!payData.containsKey("invoiceNumber") ||
-                        !payData.containsKey("clientId")) {
+                    if (clientId == null) {
                       return const SizedBox();
                     }
 
-                    final invoiceNumber =
-                    payData['invoiceNumber']
-                        .toString()
-                        .toLowerCase();
+                    final status =
+                    (payData['status'] ?? "pending").toString();
 
-                    // ---------------- SEARCH FILTER ----------------
+                    final amount =
+                    (payData['amount'] ?? 0).toDouble();
 
-                    if (!invoiceNumber.contains(searchText)) {
-                      return const SizedBox();
+                    final Timestamp? ts =
+                    payData['createdAt'];
+
+                    final date =
+                    ts != null ? ts.toDate() : DateTime.now();
+
+                    // ================= PAYMENT REFERENCE =================
+
+                    String paymentRef = "-";
+
+                    if (payData['paymentMode'] == "online" &&
+                        payData['onlineDetails'] != null) {
+
+                      paymentRef =
+                          payData['onlineDetails']
+                          ['transactionId'] ??
+                              "-";
                     }
 
-                    final String clientId = payData['clientId'];
+                    if (payData['paymentMode'] == "offline" &&
+                        payData['offlineDetails'] != null) {
 
-                    return FutureBuilder<DocumentSnapshot>(
+                      paymentRef =
+                          payData['offlineDetails']
+                          ['chequeNumber'] ??
+                              "-";
+                    }
 
-                      future: FirebaseFirestore.instance
-                          .collection("clients")
-                          .doc(clientId)
-                          .get(),
+                    return FutureBuilder<Map<String, dynamic>?>(
 
-                      builder: (context, clientSnapshot) {
+                      future: fetchClient(clientId),
 
-                        if (!clientSnapshot.hasData ||
-                            !clientSnapshot.data!.exists) {
+                      builder: (context, clientSnap) {
+
+                        if (!clientSnap.hasData) {
                           return const SizedBox();
                         }
 
-                        final clientData =
-                        clientSnapshot.data!.data()
-                        as Map<String, dynamic>;
-
-                        // ---------------- PAYMENT REFERENCE ----------------
-
-                        String paymentRef = "-";
-
-                        if (payData['paymentMode'] == "online" &&
-                            payData.containsKey("onlineDetails")) {
-                          paymentRef =
-                              payData['onlineDetails']['transactionId'] ?? "-";
-                        }
-
-                        if (payData['paymentMode'] == "offline" &&
-                            payData.containsKey("offlineDetails")) {
-                          paymentRef =
-                              payData['offlineDetails']['chequeNumber'] ?? "-";
-                        }
-
-                        final status =
-                        (payData['status'] ?? "pending").toString();
-
-                        final amount =
-                        (payData['amount'] ?? 0).toDouble();
-
-                        final date =
-                        (payData['createdAt'] as Timestamp).toDate();
-
-                        // ---------------- CARD UI ----------------
+                        final client = clientSnap.data!;
 
                         return Container(
                           margin: const EdgeInsets.symmetric(
@@ -151,11 +223,13 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
 
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius:
+                            BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
                                 blurRadius: 6,
-                                color: Colors.black.withOpacity(0.05),
+                                color: Colors.black
+                                    .withOpacity(0.05),
                               ),
                             ],
                           ),
@@ -164,7 +238,8 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                             padding: const EdgeInsets.all(14),
 
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
                               children: [
 
                                 // ================= HEADER =================
@@ -172,11 +247,13 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                                 Row(
                                   mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
+
                                   children: [
 
                                     Column(
                                       crossAxisAlignment:
                                       CrossAxisAlignment.start,
+
                                       children: [
 
                                         const Text(
@@ -190,9 +267,10 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                                         const SizedBox(height: 2),
 
                                         Text(
-                                          payData['invoiceNumber'],
+                                          payData['invoiceNumber'] ?? "-",
                                           style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
+                                            fontWeight:
+                                            FontWeight.bold,
                                             fontSize: 15,
                                           ),
                                         ),
@@ -200,21 +278,25 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                                     ),
 
                                     Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
+                                      padding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 6),
 
                                       decoration: BoxDecoration(
                                         color: status == "completed"
                                             ? Colors.green.shade100
                                             : Colors.orange.shade100,
-                                        borderRadius: BorderRadius.circular(20),
+                                        borderRadius:
+                                        BorderRadius.circular(20),
                                       ),
 
                                       child: Text(
                                         status.toUpperCase(),
                                         style: TextStyle(
                                           fontSize: 11,
-                                          fontWeight: FontWeight.bold,
+                                          fontWeight:
+                                          FontWeight.bold,
                                           color: status == "completed"
                                               ? Colors.green.shade800
                                               : Colors.orange.shade800,
@@ -231,7 +313,7 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                                 buildInfoRow(
                                   Icons.business,
                                   "Customer",
-                                  clientData['companyName'],
+                                  client['companyName'] ?? "-",
                                 ),
 
                                 buildInfoRow(
@@ -249,7 +331,7 @@ class _PaymentListScreenState extends State<PaymentListScreen> {
                                 buildInfoRow(
                                   Icons.payment,
                                   "Mode",
-                                  payData['paymentMode'],
+                                  payData['paymentMode'] ?? "-",
                                 ),
 
                                 buildInfoRow(

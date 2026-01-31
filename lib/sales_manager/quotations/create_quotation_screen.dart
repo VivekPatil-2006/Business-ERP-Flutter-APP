@@ -30,8 +30,15 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
   String enquiryTitle = "";
   String enquiryDescription = "";
 
+  String companyId = "";
+
+  Map<String, dynamic>? selectedProductData;
+
+  int enquiryQuantity = 1;
+
   final baseCtrl = TextEditingController();
   final discountCtrl = TextEditingController(text: "0");
+  final extraDiscountCtrl = TextEditingController(text: "0");
   final cgstCtrl = TextEditingController(text: "0");
   final sgstCtrl = TextEditingController(text: "0");
 
@@ -39,11 +46,35 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
   bool sending = false;
   bool loadingProduct = false;
+  bool pageLoading = true;
+
+  // ================= INIT =================
+
+  @override
+  void initState() {
+    super.initState();
+    loadCompanyId();
+  }
+
+  Future<void> loadCompanyId() async {
+
+    final uid = auth.currentUser!.uid;
+
+    final snap = await firestore
+        .collection("sales_managers")
+        .doc(uid)
+        .get();
+
+    companyId = snap.data()?['companyId'] ?? "";
+
+    if (mounted) {
+      setState(() => pageLoading = false);
+    }
+  }
 
   void showMsg(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ================= FETCH ENQUIRIES =================
@@ -52,13 +83,14 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
     final snap = await firestore
         .collection("enquiries")
+        .where("companyId", isEqualTo: companyId)
         .where("status", isEqualTo: "raised")
         .get();
 
     return snap.docs;
   }
 
-  // ================= FETCH PRODUCT DETAILS =================
+  // ================= FETCH PRODUCT =================
 
   Future<void> fetchProductDetails(String productId) async {
 
@@ -77,45 +109,71 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
     final discountPercent =
     (data['discountPercent'] ?? 0).toDouble();
 
+    final cgstPercent =
+    (data['tax']?['cgst'] ?? 0).toDouble();
+
+    final sgstPercent =
+    (data['tax']?['sgst'] ?? 0).toDouble();
+
+    if (!mounted) return;
+
     setState(() {
 
+      selectedProductData = data;
       productName = data['title'] ?? "Product";
 
-      // ✅ Auto fill base price
       baseCtrl.text = basePrice.toStringAsFixed(0);
-
-      // ✅ Auto fill product discount
       discountCtrl.text = discountPercent.toStringAsFixed(0);
+
+      cgstCtrl.text = cgstPercent.toStringAsFixed(0);
+      sgstCtrl.text = sgstPercent.toStringAsFixed(0);
     });
 
     calculateFinal();
   }
 
-  // ================= CALCULATE FINAL =================
+  // ================= CALCULATION =================
 
   void calculateFinal() {
 
-    final base = double.tryParse(baseCtrl.text) ?? 0;
-    final discount = double.tryParse(discountCtrl.text) ?? 0;
-    final cgst = double.tryParse(cgstCtrl.text) ?? 0;
-    final sgst = double.tryParse(sgstCtrl.text) ?? 0;
+    double base = double.tryParse(baseCtrl.text) ?? 0;
+    double discount = double.tryParse(discountCtrl.text) ?? 0;
+    double extraDiscount = double.tryParse(extraDiscountCtrl.text) ?? 0;
+    double cgst = double.tryParse(cgstCtrl.text) ?? 0;
+    double sgst = double.tryParse(sgstCtrl.text) ?? 0;
 
-    final discountAmt = base * discount / 100;
-    final afterDiscount = base - discountAmt;
+    discount = discount.clamp(0, 100);
+    extraDiscount = extraDiscount.clamp(0, 100);
 
-    final cgstAmt = afterDiscount * cgst / 100;
-    final sgstAmt = afterDiscount * sgst / 100;
+    final totalBase = base * enquiryQuantity;
 
-    setState(() {
-      finalAmount = afterDiscount + cgstAmt + sgstAmt;
-    });
+    final discountAmt = totalBase * discount / 100;
+    final afterDiscount = totalBase - discountAmt;
+
+    final extraDiscountAmt =
+        afterDiscount * extraDiscount / 100;
+
+    final afterExtraDiscount =
+        afterDiscount - extraDiscountAmt;
+
+    final cgstAmt = afterExtraDiscount * cgst / 100;
+    final sgstAmt = afterExtraDiscount * sgst / 100;
+
+    if (mounted) {
+      setState(() {
+        finalAmount = afterExtraDiscount + cgstAmt + sgstAmt;
+      });
+    }
   }
 
-  // ================= SAVE QUOTATION =================
+  // ================= SAVE =================
 
   Future<void> saveQuotation() async {
 
-    if (enquiryId == null || clientId == null) {
+    if (enquiryId == null ||
+        clientId == null ||
+        productId == null) {
+
       showMsg("Please select enquiry");
       return;
     }
@@ -135,45 +193,50 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
       await firestore.collection("quotations").add({
 
         "enquiryId": enquiryId,
+        "productId": productId,
         "clientId": clientId,
-        "salesManagerId": userId,
 
-        // ================= SNAPSHOT =================
+        "companyId": companyId,
+        "salesManagerId": userId,
 
         "productSnapshot": {
 
           "productId": productId,
           "productName": productName,
+          "quantity": enquiryQuantity,
 
-          "basePrice": double.parse(baseCtrl.text),
-          "discountPercent": double.parse(discountCtrl.text),
-          "cgstPercent": double.parse(cgstCtrl.text),
-          "sgstPercent": double.parse(sgstCtrl.text),
+          "basePrice": double.tryParse(baseCtrl.text) ?? 0,
+          "discountPercent": double.tryParse(discountCtrl.text) ?? 0,
+          "extraDiscountPercent":
+          double.tryParse(extraDiscountCtrl.text) ?? 0,
+
+          "cgstPercent": double.tryParse(cgstCtrl.text) ?? 0,
+          "sgstPercent": double.tryParse(sgstCtrl.text) ?? 0,
 
           "finalAmount": finalAmount,
         },
 
         "quotationAmount": finalAmount,
-
         "status": "sent",
-
         "pdfUrl": "",
+
         "createdAt": Timestamp.now(),
         "updatedAt": Timestamp.now(),
       });
 
-      // Update enquiry status
       await firestore
           .collection("enquiries")
           .doc(enquiryId)
           .update({"status": "quoted"});
 
-      // Notify client
       await NotificationService().sendNotification(
+
         userId: clientId!,
         role: "client",
+
         title: "New Quotation Received",
         message: "Sales manager sent you a quotation",
+
         type: "quotation",
         referenceId: docRef.id,
       );
@@ -189,7 +252,9 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
     } finally {
 
-      setState(() => sending = false);
+      if (mounted) {
+        setState(() => sending = false);
+      }
     }
   }
 
@@ -198,233 +263,312 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
   @override
   Widget build(BuildContext context) {
 
+    if (pageLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
 
       appBar: AppBar(
-        title: const Text("Create Quotation"),
+        title: const Text(
+          "Create Quotation",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: AppColors.darkBlue,
+        foregroundColor: Colors.white,
       ),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
 
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
 
-            // ================= SELECT ENQUIRY =================
-
-            buildSectionCard(
-              title: "Select Enquiry",
-
-              child: FutureBuilder(
-                future: fetchEnquiries(),
-
-                builder: (context, snapshot) {
-
-                  if (!snapshot.hasData) {
-                    return const LinearProgressIndicator();
-                  }
-
-                  final enquiries = snapshot.data!;
-
-                  return DropdownButtonFormField<String>(
-
-                    value: selectedEnquiryDropdown,
-
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.assignment),
-                    ),
-
-                    hint: const Text("Choose Enquiry"),
-
-                    items: enquiries.map((e) {
-
-                      return DropdownMenuItem<String>(
-                        value: e.id,
-                        child: Text(e['title']),
-                      );
-
-                    }).toList(),
-
-                    onChanged: (val) {
-
-                      final e =
-                      enquiries.firstWhere((x) => x.id == val);
-
-                      setState(() {
-
-                        loadingProduct = true;
-
-                        selectedEnquiryDropdown = val;
-
-                        enquiryId = val;
-                        productId = e['productId'];
-                        clientId = e['clientId'];
-
-                        enquiryTitle = e['title'];
-                        enquiryDescription = e['description'];
-
-                        productName = null;
-                      });
-
-                      fetchProductDetails(productId!).then((_) {
-
-                        if (!mounted) return;
-
-                        setState(() => loadingProduct = false);
-                      });
-                    },
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ================= ENQUIRY DETAILS =================
-
-            if (enquiryId != null)
+              // ================= SELECT ENQUIRY =================
 
               buildSectionCard(
-                title: "Enquiry Details",
+                title: "Select Enquiry",
+
+                child: FutureBuilder(
+                  future: fetchEnquiries(),
+
+                  builder: (context, snapshot) {
+
+                    if (!snapshot.hasData) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: LinearProgressIndicator(),
+                      );
+                    }
+
+                    final enquiries = snapshot.data!;
+
+                    if (enquiries.isEmpty) {
+                      return const Text("No pending enquiries");
+                    }
+
+                    return DropdownButtonFormField<String>(
+
+                      value: selectedEnquiryDropdown,
+
+                      isExpanded: true, // ✅ IMPORTANT (fixes overflow)
+
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.assignment),
+                      ),
+
+                      hint: const Text("Choose Enquiry"),
+
+                      items: enquiries.map((e) {
+
+                        final title = e['title'] ?? "Enquiry";
+
+                        return DropdownMenuItem<String>(
+                          value: e.id,
+
+                          child: Text(
+                            title,
+                            maxLines: 1,                 // ✅ limit lines
+                            overflow: TextOverflow.ellipsis, // ✅ add ...
+                            softWrap: false,
+                          ),
+                        );
+
+                      }).toList(),
+
+                      onChanged: (val) async {
+
+                        final e =
+                        enquiries.firstWhere((x) => x.id == val);
+
+                        setState(() {
+
+                          selectedEnquiryDropdown = val;
+                          enquiryId = val;
+
+                          final data =
+                          e.data() as Map<String, dynamic>;
+
+                          productId = data['productId'];
+                          clientId = data['clientId'];
+
+                          enquiryTitle = data['title'] ?? "";
+                          enquiryDescription = data['description'] ?? "";
+
+                          enquiryQuantity = data['quantity'] ?? 1;
+
+                          loadingProduct = true;
+                          selectedProductData = null;
+                        });
+
+                        if (productId != null) {
+                          await fetchProductDetails(productId!);
+                        }
+
+                        if (mounted) {
+                          setState(() => loadingProduct = false);
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ================= ENQUIRY DETAILS =================
+
+              if (enquiryId != null)
+
+                buildSectionCard(
+                  title: "Enquiry Details",
+
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+
+                      Text(
+                        "Title: $enquiryTitle",
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+
+                      infoRow("Quantity", enquiryQuantity.toString()),
+
+                      const SizedBox(height: 6),
+
+                      Text(
+                        "Description: $enquiryDescription",
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 16),
+
+              // ================= PRODUCT DETAILS =================
+
+              if (loadingProduct)
+                const LinearProgressIndicator(),
+
+              if (selectedProductData != null)
+
+                buildSectionCard(
+                  title: "Product Details",
+                  child: buildProductPreview(selectedProductData!),
+                ),
+
+              const SizedBox(height: 20),
+
+              // ================= PRICING =================
+
+              buildSectionCard(
+                title: "Pricing Details",
 
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
 
-                    Text("Title: $enquiryTitle"),
+                    buildInput(baseCtrl, "Base Amount", Icons.currency_rupee),
+                    const SizedBox(height: 10),
 
-                    const SizedBox(height: 6),
+                    buildInput(discountCtrl, "Product Discount %", Icons.percent),
+                    const SizedBox(height: 10),
 
-                    loadingProduct
-                        ? const LinearProgressIndicator()
-                        : Text("Product: $productName"),
+                    buildInput(extraDiscountCtrl, "Extra Discount %", Icons.trending_down),
+                    const SizedBox(height: 10),
 
-                    const SizedBox(height: 6),
+                    buildInput(cgstCtrl, "CGST %", Icons.account_balance),
+                    const SizedBox(height: 10),
 
-                    Text("Description: $enquiryDescription"),
+                    buildInput(sgstCtrl, "SGST %", Icons.account_balance),
                   ],
                 ),
               ),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-            // ================= PRICING =================
+              // ================= FINAL AMOUNT =================
 
-            buildSectionCard(
-              title: "Pricing Details",
+              Container(
+                padding: const EdgeInsets.all(16),
 
-              child: Column(
-                children: [
+                decoration: BoxDecoration(
+                  color: AppColors.cardWhite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
 
-                  buildInput(
-                    controller: baseCtrl,
-                    label: "Base Amount",
-                    icon: Icons.currency_rupee,
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
 
-                  const SizedBox(height: 10),
+                    const Text(
+                      "Final Amount",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
 
-                  buildInput(
-                    controller: discountCtrl,
-                    label: "Discount %",
-                    icon: Icons.percent,
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  buildInput(
-                    controller: cgstCtrl,
-                    label: "CGST %",
-                    icon: Icons.account_balance,
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  buildInput(
-                    controller: sgstCtrl,
-                    label: "SGST %",
-                    icon: Icons.account_balance,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ================= TOTAL =================
-
-            Container(
-              padding: const EdgeInsets.all(16),
-
-              decoration: BoxDecoration(
-                color: AppColors.cardWhite,
-                borderRadius: BorderRadius.circular(14),
+                    Text(
+                      "₹ ${finalAmount.toStringAsFixed(2)}",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
+              const SizedBox(height: 28),
 
-                  const Text(
-                    "Final Amount",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+              // ================= SEND BUTTON =================
+
+              SizedBox(
+                width: double.infinity,
+
+                child: ElevatedButton.icon(
+
+                  icon: sending
+                      ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                      : const Icon(Icons.send, color: Colors.white),
+
+                  label: const Text(
+                    "SEND QUOTATION",
+                    style: TextStyle(color: Colors.white),
                   ),
 
-                  Text(
-                    "₹ ${finalAmount.toStringAsFixed(2)}",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      color: Colors.green,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.darkBlue,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 30),
-
-            // ================= SEND =================
-
-            SizedBox(
-              width: double.infinity,
-
-              child: ElevatedButton.icon(
-
-                icon: sending
-                    ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-                    : const Icon(Icons.send, color: Colors.white),
-
-                label: const Text(
-                  "SEND QUOTATION",
-                  style: TextStyle(color: Colors.white),
+                  onPressed: sending ? null : saveQuotation,
                 ),
-
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.darkBlue,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-
-                onPressed: sending ? null : saveQuotation,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ================= UI HELPERS =================
+  // ================= PRODUCT UI =================
+
+  Widget buildProductPreview(Map<String, dynamic> p) {
+
+    final pricing = p['pricing'] ?? {};
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+        infoRow("Product", p['title'] ?? "-"),
+        infoRow("Item No", p['itemNo'] ?? "-"),
+        infoRow("Base Price", "₹ ${pricing['basePrice'] ?? '-'}"),
+        infoRow("Stock", p['stock']?.toString() ?? "-"),
+        infoRow("Size", p['size'] ?? "-"),
+      ],
+    );
+  }
+
+  Widget infoRow(String label, String value) {
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+
+      child: Row(
+        children: [
+
+          SizedBox(
+            width: 130,
+            child: Text(
+              "$label:",
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  // ================= COMMON UI =================
 
   Widget buildSectionCard({
     required String title,
@@ -437,14 +581,25 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
       decoration: BoxDecoration(
         color: AppColors.cardWhite,
         borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+          ),
+        ],
       ),
 
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          Text(title,
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
 
           const SizedBox(height: 10),
 
@@ -454,15 +609,16 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
     );
   }
 
-  Widget buildInput({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-  }) {
+  Widget buildInput(
+      TextEditingController controller,
+      String label,
+      IconData icon,
+      ) {
 
     return TextField(
       controller: controller,
       keyboardType: TextInputType.number,
+      enabled: !loadingProduct,
 
       decoration: InputDecoration(
         labelText: label,
@@ -479,6 +635,7 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
 
     baseCtrl.dispose();
     discountCtrl.dispose();
+    extraDiscountCtrl.dispose();
     cgstCtrl.dispose();
     sgstCtrl.dispose();
 

@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/services/cloudinary_service.dart';
 import '../../core/theme/app_colors.dart';
 
-
 class ClientLoiUploadScreen extends StatefulWidget {
 
   final String quotationId;
@@ -65,7 +64,6 @@ class _ClientLoiUploadScreenState extends State<ClientLoiUploadScreen> {
                   pickPdf();
                 },
               ),
-
             ],
           ),
         );
@@ -120,25 +118,61 @@ class _ClientLoiUploadScreenState extends State<ClientLoiUploadScreen> {
 
       setState(() => uploading = true);
 
-      final url =
+      // ================= FETCH QUOTATION =================
+
+      final quoteSnap = await FirebaseFirestore.instance
+          .collection("quotations")
+          .doc(widget.quotationId)
+          .get();
+
+      if (!quoteSnap.exists) {
+        throw Exception("Quotation not found");
+      }
+
+      final quoteData = quoteSnap.data()!;
+
+      final clientId = quoteData['clientId'];
+      final salesManagerId = quoteData['salesManagerId'];
+      final enquiryId = quoteData['enquiryId'];
+      final companyId = quoteData['companyId'];
+
+      // ================= UPLOAD FILE =================
+
+      final fileUrl =
       await CloudinaryService().uploadFile(file!);
+
+      // ================= SAVE LOI =================
 
       await FirebaseFirestore.instance
           .collection("loi")
           .add({
 
         "quotationId": widget.quotationId,
-        "attachmentUrl": url,
-        "fileType": file!.path.endsWith(".pdf") ? "pdf" : "image",
-        "status": "sent",
+        "enquiryId": enquiryId,
+
+        "companyId": companyId,
+        "clientId": clientId,
+        "salesManagerId": salesManagerId,
+
+        "attachmentUrl": fileUrl,
+
+        // schema field name
+        "filetype": file!.path.endsWith(".pdf") ? "pdf" : "image",
+
+        "status": "pending",
+
         "createdAt": Timestamp.now(),
       });
+
+      // ================= UPDATE QUOTATION =================
 
       await FirebaseFirestore.instance
           .collection("quotations")
           .doc(widget.quotationId)
           .update({
+
         "status": "loi_sent",
+        "updatedAt": Timestamp.now(),
       });
 
       if (!mounted) return;
@@ -150,6 +184,8 @@ class _ClientLoiUploadScreenState extends State<ClientLoiUploadScreen> {
       Navigator.pop(context);
 
     } catch (e) {
+
+      debugPrint("LOI Upload Error => $e");
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Upload Failed")),
@@ -266,9 +302,7 @@ class _ClientLoiUploadScreenState extends State<ClientLoiUploadScreen> {
                 onPressed: uploading ? null : uploadLoi,
 
                 child: uploading
-                    ? const CircularProgressIndicator(
-                  color: Colors.white,
-                )
+                    ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
                   "UPLOAD LOI",
                   style: TextStyle(

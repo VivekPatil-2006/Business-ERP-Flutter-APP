@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:open_filex/open_filex.dart';
 
 import '../../core/pdf/pdf_utils.dart';
-
 
 class InvoiceListScreen extends StatefulWidget {
   const InvoiceListScreen({super.key});
@@ -15,37 +14,37 @@ class InvoiceListScreen extends StatefulWidget {
 
 class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
+  final firestore = FirebaseFirestore.instance;
+  final auth = FirebaseAuth.instance;
+
   String searchText = "";
   String paymentFilter = "all";
 
+  String? companyId;
+  bool loadingCompany = true;
+
   // ======================
-  // FILTER TITLE
+  // LOAD COMPANY ID
   // ======================
 
-  String get filterTitle {
-
-    if (paymentFilter == "paid") {
-      return "Paid Invoices";
-    }
-
-    if (paymentFilter == "unpaid") {
-      return "Unpaid Invoices";
-    }
-
-    return "All Invoices";
+  @override
+  void initState() {
+    super.initState();
+    loadCompany();
   }
 
-  Color get titleColor {
+  Future<void> loadCompany() async {
 
-    if (paymentFilter == "paid") {
-      return Colors.green;
-    }
+    final uid = auth.currentUser!.uid;
 
-    if (paymentFilter == "unpaid") {
-      return Colors.red;
-    }
+    final snap = await firestore
+        .collection("sales_managers")
+        .doc(uid)
+        .get();
 
-    return Colors.black;
+    companyId = snap.data()?['companyId'];
+
+    setState(() => loadingCompany = false);
   }
 
   // ======================
@@ -54,23 +53,19 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
   bool filterInvoice(QueryDocumentSnapshot doc) {
 
-    final invoiceNumber =
-    (doc['invoiceNumber'] ?? "").toString().toLowerCase();
+    final data = doc.data() as Map<String, dynamic>;
 
-    final paymentStatus =
-    doc.data().toString().contains('paymentStatus')
-        ? (doc['paymentStatus'] ?? "unpaid")
-        .toString()
-        .toLowerCase()
-        : "unpaid";
+    final String invoiceNumber =
+    (data['invoiceNumber'] ?? "").toString().toLowerCase();
 
-    final matchSearch =
+    final String paymentStatus =
+    (data['paymentStatus'] ?? "unpaid").toString().toLowerCase();
+
+    final bool matchSearch =
     invoiceNumber.contains(searchText.toLowerCase());
 
-    final matchPayment =
-    paymentFilter == "all"
-        ? true
-        : paymentStatus == paymentFilter;
+    final bool matchPayment =
+        paymentFilter == "all" || paymentStatus == paymentFilter;
 
     return matchSearch && matchPayment;
   }
@@ -82,36 +77,21 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
   @override
   Widget build(BuildContext context) {
 
+    if (loadingCompany) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (companyId == null) {
+      return const Center(child: Text("Company not assigned"));
+    }
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
 
-        // ======================
-        // TITLE
-        // ======================
+        // ================= SEARCH + FILTER =================
 
         Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
-          ),
-
-          child: Text(
-            filterTitle,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: titleColor,
-            ),
-          ),
-        ),
-
-        // ======================
-        // SEARCH + FILTER BAR
-        // ======================
-
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.all(10),
 
           child: Row(
             children: [
@@ -119,13 +99,13 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
               Expanded(
                 child: TextField(
                   decoration: const InputDecoration(
-                    hintText: "Search Invoice Number",
+                    hintText: "Search Invoice",
                     prefixIcon: Icon(Icons.search),
                     border: OutlineInputBorder(),
                   ),
 
                   onChanged: (val) {
-                    setState(() => searchText = val);
+                    setState(() => searchText = val.trim());
                   },
                 ),
               ),
@@ -137,20 +117,9 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
                 items: const [
 
-                  DropdownMenuItem(
-                    value: "all",
-                    child: Text("All"),
-                  ),
-
-                  DropdownMenuItem(
-                    value: "paid",
-                    child: Text("Paid"),
-                  ),
-
-                  DropdownMenuItem(
-                    value: "unpaid",
-                    child: Text("Unpaid"),
-                  ),
+                  DropdownMenuItem(value: "all", child: Text("All")),
+                  DropdownMenuItem(value: "paid", child: Text("Paid")),
+                  DropdownMenuItem(value: "unpaid", child: Text("Unpaid")),
                 ],
 
                 onChanged: (val) {
@@ -161,21 +130,20 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
           ),
         ),
 
-        const SizedBox(height: 8),
-
-        // ======================
-        // INVOICE LIST
-        // ======================
+        // ================= REALTIME INVOICE LIST =================
 
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
 
-            stream: FirebaseFirestore.instance
+            stream: firestore
                 .collection("invoices")
+                .where("companyId", isEqualTo: companyId)
                 .orderBy("createdAt", descending: true)
                 .snapshots(),
 
             builder: (context, snapshot) {
+
+              // ---------- LOADING ----------
 
               if (snapshot.connectionState ==
                   ConnectionState.waiting) {
@@ -183,10 +151,19 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
                     child: CircularProgressIndicator());
               }
 
+              // ---------- ERROR ----------
+
+              if (snapshot.hasError) {
+                return const Center(
+                    child: Text("Failed to load invoices"));
+              }
+
+              // ---------- EMPTY ----------
+
               if (!snapshot.hasData ||
                   snapshot.data!.docs.isEmpty) {
                 return const Center(
-                    child: Text("No Invoices Found"));
+                    child: Text("No invoices found"));
               }
 
               final invoices =
@@ -194,72 +171,117 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
               if (invoices.isEmpty) {
                 return const Center(
-                    child: Text("No Matching Invoices"));
+                    child: Text("No matching invoices"));
               }
 
+              // ---------- LIST ----------
+
               return ListView.builder(
+
+                physics: const BouncingScrollPhysics(),
+
                 itemCount: invoices.length,
 
                 itemBuilder: (context, index) {
 
                   final inv = invoices[index];
+                  final data =
+                  inv.data() as Map<String, dynamic>;
+
+                  final Timestamp? createdAt =
+                  data['createdAt'];
+
+                  final String date = createdAt != null
+                      ? DateFormat.yMMMd()
+                      .format(createdAt.toDate())
+                      : "-";
+
+                  final String invoiceNo =
+                      data['invoiceNumber'] ?? inv.id;
+
+                  final String pdfUrl =
+                      data['pdfUrl'] ?? "";
+
+                  final String paymentStatus =
+                  (data['paymentStatus'] ?? "unpaid")
+                      .toString()
+                      .toLowerCase();
 
                   return Card(
-                    elevation: 3,
                     margin: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6),
+                        horizontal: 10, vertical: 6),
 
                     child: ListTile(
 
+                      leading: Icon(
+                        Icons.receipt_long,
+                        color: paymentStatus == "paid"
+                            ? Colors.green
+                            : Colors.orange,
+                      ),
+
                       title: Text(
-                        inv['invoiceNumber'],
+                        invoiceNo,
                         style: const TextStyle(
                             fontWeight: FontWeight.bold),
                       ),
 
-                      subtitle: Text(
-                        DateFormat.yMMMd()
-                            .format(inv['date'].toDate()),
+                      subtitle: Column(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+
+                          Text(date),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            paymentStatus.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: paymentStatus == "paid"
+                                  ? Colors.green
+                                  : Colors.orange,
+                            ),
+                          ),
+                        ],
                       ),
 
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
 
-                          // ---------------- VIEW PDF ----------------
-
-                          if (inv['pdfUrl'] != "")
+                          if (pdfUrl.isNotEmpty)
 
                             IconButton(
                               icon: const Icon(Icons.visibility),
-                              tooltip: "View PDF",
-
                               onPressed: () {
-
-                                PdfUtils.openPdf(inv['pdfUrl']);
+                                PdfUtils.openPdf(pdfUrl);
                               },
                             ),
 
-                          // ---------------- DOWNLOAD PDF ----------------
-
-                          if (inv['pdfUrl'] != "")
+                          if (pdfUrl.isNotEmpty)
 
                             IconButton(
                               icon: const Icon(Icons.download),
-                              tooltip: "Download PDF",
-
                               onPressed: () async {
 
-                                final path = await PdfUtils.downloadPdf(
-
-                                  url: inv['pdfUrl'],
-                                  fileName: inv['invoiceNumber'],
+                                final path =
+                                await PdfUtils.downloadPdf(
+                                  url: pdfUrl,
+                                  fileName: invoiceNo,
                                 );
 
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text("Downloaded to $path")),
-                                );
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          "Downloaded to $path"),
+                                    ),
+                                  );
+                                }
                               },
                             ),
                         ],

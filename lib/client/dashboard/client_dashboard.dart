@@ -15,139 +15,17 @@ class ClientDashboard extends StatefulWidget {
 
 class _ClientDashboardState extends State<ClientDashboard> {
 
-  final uid = FirebaseAuth.instance.currentUser!.uid;
+  final String uid = FirebaseAuth.instance.currentUser!.uid;
 
-  bool loading = true;
+  // ================= SAMPLE PAYMENT TREND =================
 
-  int totalQuotations = 0;
-  int approvedQuotations = 0;
-  int pendingPayments = 0;
-
-  double totalInvoiceAmount = 0;
-  double totalPaidAmount = 0;
-
-  List<Map<String, dynamic>> recentActivity = [];
-  Map<String, double> monthlyPayments = {};
-
-  @override
-  void initState() {
-    super.initState();
-    loadDashboardData();
-  }
-
-  // =====================================================
-  // LOAD DASHBOARD DATA
-  // =====================================================
-
-  Future<void> loadDashboardData() async {
-
-    try {
-
-      resetValues();
-
-      final quotationSnap = await FirebaseFirestore.instance
-          .collection("quotations")
-          .where("clientId", isEqualTo: uid)
-          .get();
-
-      final paymentSnap = await FirebaseFirestore.instance
-          .collection("payments")
-          .where("clientId", isEqualTo: uid)
-          .get();
-
-      // ================= QUOTATIONS =================
-
-      totalQuotations = quotationSnap.docs.length;
-
-      for (var q in quotationSnap.docs) {
-
-        final status = q['status'] ?? "";
-
-        if (status == "ack_sent" || status == "payment_done") {
-          approvedQuotations++;
-        }
-
-        if (status == "ack_sent") {
-          pendingPayments++;
-        }
-      }
-
-      // ================= PAYMENTS =================
-
-      for (var p in paymentSnap.docs) {
-
-        final data = p.data();
-
-        final amount = (data['amount'] ?? 0).toDouble();
-        final status = data['status'] ?? "pending";
-
-        totalInvoiceAmount += amount;
-
-        if (status == "completed") {
-          totalPaidAmount += amount;
-        }
-      }
-
-      // ================= RECENT ACTIVITY =================
-
-      recentActivity = quotationSnap.docs
-          .take(5)
-          .map((e) => {
-        "title": "Quotation",
-        "value": e['quotationAmount'] ?? 0,
-        "date": e['createdAt'] ?? Timestamp.now(),
-      })
-          .toList();
-
-      // ================= PAYMENT TREND (SAMPLE ONLY) =================
-
-      if (monthlyPayments.isEmpty) {
-        loadSamplePaymentTrend();
-      }
-
-    } catch (e) {
-
-      debugPrint("Client Dashboard Error => $e");
-
-      loadSamplePaymentTrend();
-    }
-
-    if (mounted) {
-      setState(() => loading = false);
-    }
-  }
-
-  // =====================================================
-  // RESET
-  // =====================================================
-
-  void resetValues() {
-
-    totalQuotations = 0;
-    approvedQuotations = 0;
-    pendingPayments = 0;
-
-    totalInvoiceAmount = 0;
-    totalPaidAmount = 0;
-
-    recentActivity.clear();
-    monthlyPayments.clear();
-  }
-
-  // =====================================================
-  // SAMPLE PAYMENT TREND (GRAPH PREVIEW)
-  // =====================================================
-
-  void loadSamplePaymentTrend() {
-
-    monthlyPayments = {
-      "2025-09": 12000,
-      "2025-10": 18000,
-      "2025-11": 15000,
-      "2025-12": 23000,
-      "2026-01": 28000,
-    };
-  }
+  final Map<String, double> monthlyPayments = {
+    "2025-09": 12000,
+    "2025-10": 18000,
+    "2025-11": 15000,
+    "2025-12": 23000,
+    "2026-01": 28000,
+  };
 
   // =====================================================
   // UI
@@ -156,176 +34,282 @@ class _ClientDashboardState extends State<ClientDashboard> {
   @override
   Widget build(BuildContext context) {
 
-    if (loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    return StreamBuilder<QuerySnapshot>(
 
-    return SingleChildScrollView(
-      child: Column(
-        children: [
+      stream: FirebaseFirestore.instance
+          .collection("quotations")
+          .where("clientId", isEqualTo: uid)
+          .snapshots(),
 
-          // ================= HEADER =================
+      builder: (context, quotationSnapshot) {
 
-          Container(
-            padding: const EdgeInsets.all(20),
-            width: double.infinity,
+        if (quotationSnapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.darkBlue,
-                  AppColors.primaryBlue,
-                ],
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(22),
-                bottomRight: Radius.circular(22),
-              ),
-            ),
+        final quotationDocs =
+            quotationSnapshot.data?.docs ?? [];
 
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        return StreamBuilder<QuerySnapshot>(
 
-                Text(
-                  "Client Dashboard",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+          stream: FirebaseFirestore.instance
+              .collection("payments")
+              .where("clientId", isEqualTo: uid)
+              .snapshots(),
 
-                SizedBox(height: 6),
+          builder: (context, paymentSnapshot) {
 
-                Text(
-                  "Overview of your business activity",
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
+            if (paymentSnapshot.connectionState ==
+                ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          const SizedBox(height: 20),
+            final paymentDocs =
+                paymentSnapshot.data?.docs ?? [];
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            // ================= PROCESS REALTIME DATA =================
 
-            child: Column(
-              children: [
+            int totalQuotations = quotationDocs.length;
+            int approvedQuotations = 0;
+            int pendingPayments = 0;
 
-                // ================= KPI GRID =================
+            double totalInvoiceAmount = 0;
+            double totalPaidAmount = 0;
 
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.3,
+            List<Map<String, dynamic>> recentActivity = [];
 
-                  children: [
+            // ---------- QUOTATIONS ----------
 
-                    kpiCard("Total Quotation",
-                        totalQuotations.toString(),
-                        Icons.assignment),
+            for (var q in quotationDocs) {
 
-                    kpiCard("Approved",
-                        approvedQuotations.toString(),
-                        Icons.verified),
+              final status = q['status'] ?? "";
 
-                    kpiCard("Pending Payment",
-                        pendingPayments.toString(),
-                        Icons.pending_actions),
+              if (status == "payment_done") {
+                approvedQuotations++;
+              }
 
-                    kpiCard("Invoice Amount",
-                        "₹ ${totalInvoiceAmount.toStringAsFixed(0)}",
-                        Icons.receipt),
+              if (status == "loi_sent") {
+                pendingPayments++;
+              }
+            }
 
-                    kpiCard("Paid Amount",
-                        "₹ ${totalPaidAmount.toStringAsFixed(0)}",
-                        Icons.payments),
-                  ],
-                ),
+            // ---------- PAYMENTS ----------
 
-                const SizedBox(height: 25),
+            for (var p in paymentDocs) {
 
-                // ================= PAYMENT TREND =================
+              final data = p.data() as Map<String, dynamic>;
 
-                dashboardCard(
-                  title: "Payment Trend",
-                  child: SizedBox(
-                    height: 220,
-                    child: buildLineChart(),
-                  ),
-                ),
+              final amount =
+              (data['amount'] ?? 0).toDouble();
 
-                const SizedBox(height: 25),
+              final status =
+                  data['status'] ?? "pending";
 
-                // ================= RECENT =================
+              totalInvoiceAmount += amount;
 
-                dashboardCard(
-                  title: "Recent Activity",
+              if (status == "completed") {
+                totalPaidAmount += amount;
+              }
+            }
 
-                  child: recentActivity.isEmpty
-                      ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Center(child: Text("No recent activity")),
-                  )
-                      : Column(
-                    children: recentActivity.map((item) {
+            // ---------- RECENT ACTIVITY ----------
 
-                      final date =
-                      (item['date'] as Timestamp).toDate();
+            final sortedQuotes = quotationDocs.toList()
+              ..sort((a, b) {
 
-                      return ListTile(
-                        dense: true,
+                final aTime =
+                    a['createdAt'] ?? Timestamp.now();
 
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.primaryBlue,
-                          child: const Icon(
-                            Icons.receipt_long,
-                            size: 18,
+                final bTime =
+                    b['createdAt'] ?? Timestamp.now();
+
+                return bTime.compareTo(aTime);
+              });
+
+            recentActivity = sortedQuotes
+                .take(5)
+                .map((e) => {
+
+              "title": "Quotation",
+              "value": (e['quotationAmount'] ?? 0).toDouble(),
+              "date": e['createdAt'] ?? Timestamp.now(),
+
+            }).toList();
+
+            // ================= UI =================
+
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+
+                  // ================= HEADER =================
+
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    width: double.infinity,
+
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.darkBlue,
+                          AppColors.primaryBlue,
+                        ],
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(22),
+                        bottomRight: Radius.circular(22),
+                      ),
+                    ),
+
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+
+                        Text(
+                          "Client Dashboard",
+                          style: TextStyle(
                             color: Colors.white,
-                          ),
-                        ),
-
-                        title: Text(item['title']),
-
-                        subtitle: Text(
-                          DateFormat.yMMMd().format(date),
-                        ),
-
-                        trailing: Text(
-                          "₹ ${item['value']}",
-                          style: const TextStyle(
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
 
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        ],
-      ),
+                        SizedBox(height: 6),
+
+                        Text(
+                          "Overview of your business activity",
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+
+                    child: Column(
+                      children: [
+
+                        // ================= KPI GRID =================
+
+                        GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 1.2,
+
+                          children: [
+
+                            kpiCard("Total Quotation",
+                                totalQuotations.toString(),
+                                Icons.assignment),
+
+                            kpiCard("Approved",
+                                approvedQuotations.toString(),
+                                Icons.verified),
+
+                            kpiCard("Pending Payment",
+                                pendingPayments.toString(),
+                                Icons.pending_actions),
+
+                            kpiCard("Invoice Amount",
+                                "₹ ${totalInvoiceAmount.toStringAsFixed(0)}",
+                                Icons.receipt),
+
+                            kpiCard("Paid Amount",
+                                "₹ ${totalPaidAmount.toStringAsFixed(0)}",
+                                Icons.payments),
+                          ],
+                        ),
+
+                        const SizedBox(height: 25),
+
+                        // ================= PAYMENT TREND (SAMPLE) =================
+
+                        dashboardCard(
+                          title: "Payment Trend",
+                          child: SizedBox(
+                            height: 220,
+                            child: buildLineChart(),
+                          ),
+                        ),
+
+                        const SizedBox(height: 25),
+
+                        // ================= RECENT ACTIVITY =================
+
+                        dashboardCard(
+                          title: "Recent Activity",
+
+                          child: recentActivity.isEmpty
+                              ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Center(
+                                child: Text("No recent activity")),
+                          )
+                              : Column(
+                            children: recentActivity.map((item) {
+
+                              final date =
+                              (item['date'] as Timestamp).toDate();
+
+                              return ListTile(
+                                dense: true,
+
+                                leading: CircleAvatar(
+                                  backgroundColor:
+                                  AppColors.primaryBlue,
+
+                                  child: const Icon(
+                                    Icons.receipt_long,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                ),
+
+                                title: const Text("Quotation"),
+
+                                subtitle: Text(
+                                  DateFormat.yMMMd().format(date),
+                                ),
+
+                                trailing: Text(
+                                  "₹ ${item['value']}",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
   // =====================================================
-  // KPI CARD (MATCH SALES DASHBOARD STYLE)
+  // KPI CARD
   // =====================================================
 
   Widget kpiCard(String title, String value, IconData icon) {
-
-    final parts = title.split(" ");
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -337,67 +321,49 @@ class _ClientDashboardState extends State<ClientDashboard> {
           BoxShadow(
             color: Colors.black.withOpacity(0.06),
             blurRadius: 10,
-            offset: const Offset(0, 4),
           ),
         ],
       ),
 
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
         children: [
 
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
 
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-
-                    Text(
-                      parts.first,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-
-                    if (parts.length > 1)
-                      Text(
-                        parts.sublist(1).join(" "),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ],
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
 
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  icon,
-                  size: 30,
-                  color: AppColors.primaryBlue,
-                ),
+              const SizedBox(width: 6),
+
+              Icon(
+                icon,
+                size: 22,
+                color: AppColors.primaryBlue,
               ),
             ],
           ),
 
-          const SizedBox(height: 10),
-
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -447,7 +413,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   // =====================================================
-  // PAYMENT TREND LINE CHART
+  // PAYMENT TREND CHART (SAMPLE)
   // =====================================================
 
   Widget buildLineChart() {

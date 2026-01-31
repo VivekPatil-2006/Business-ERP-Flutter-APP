@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/services/cloudinary_service.dart';
 import '../../core/theme/app_colors.dart';
 
-
 class SalesProfileScreen extends StatefulWidget {
   const SalesProfileScreen({super.key});
 
@@ -24,7 +23,6 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
   final phoneCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
   final addressCtrl = TextEditingController();
-  final passwordCtrl = TextEditingController();
 
   File? imageFile;
   String profileUrl = "";
@@ -33,9 +31,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
 
   String get uid => auth.currentUser!.uid;
 
-  // -------------------------
-  // Load Profile
-  // -------------------------
+  // ================= LOAD PROFILE =================
 
   @override
   void initState() {
@@ -50,24 +46,23 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
         .doc(uid)
         .get();
 
-    if (doc.exists) {
+    if (!doc.exists) return;
 
-      final data = doc.data()!;
+    final data = doc.data()!;
 
-      nameCtrl.text = data['name'] ?? "";
-      phoneCtrl.text = data['phone'] ?? "";
-      addressCtrl.text = data['addressLine1'] ?? "";
-      emailCtrl.text = auth.currentUser!.email ?? "";
+    nameCtrl.text = data['name'] ?? "";
+    phoneCtrl.text = data['phone'] ?? "";
+    addressCtrl.text = data['addressLine1'] ?? "";
+    emailCtrl.text = auth.currentUser!.email ?? "";
 
-      profileUrl = data['profileImage'] ?? "";
+    profileUrl = data['profileImage'] ?? "";
 
+    if (mounted) {
       setState(() {});
     }
   }
 
-  // -------------------------
-  // Pick Profile Image
-  // -------------------------
+  // ================= PICK IMAGE =================
 
   pickImage() async {
 
@@ -81,9 +76,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
     }
   }
 
-  // -------------------------
-  // Update Profile
-  // -------------------------
+  // ================= UPDATE PROFILE =================
 
   Future<void> updateProfile() async {
 
@@ -100,8 +93,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
 
       // Upload new image if selected
       if (imageFile != null) {
-        imageUrl =
-        await CloudinaryService().uploadFile(imageFile!);
+        imageUrl = await CloudinaryService().uploadFile(imageFile!);
       }
 
       // Update Firestore
@@ -110,42 +102,51 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
           .doc(uid)
           .update({
 
-        "name": nameCtrl.text,
-        "phone": phoneCtrl.text,
-        "addressLine1": addressCtrl.text,
+        "name": nameCtrl.text.trim(),
+        "phone": phoneCtrl.text.trim(),
+        "addressLine1": addressCtrl.text.trim(),
         "profileImage": imageUrl,
-
       });
 
-      // Update Email
-      if (emailCtrl.text != auth.currentUser!.email) {
-        await auth.currentUser!
-            .updateEmail(emailCtrl.text.trim());
-      }
+      // Update Email (Firebase Auth)
+      if (emailCtrl.text.trim() != auth.currentUser!.email) {
 
-      // Update Password (if entered)
-      if (passwordCtrl.text.isNotEmpty) {
-        await auth.currentUser!
-            .updatePassword(passwordCtrl.text.trim());
+        try {
+          await auth.currentUser!
+              .updateEmail(emailCtrl.text.trim());
+        } catch (e) {
+
+          showMsg("Re-login required to update email");
+        }
       }
 
       showMsg("Profile Updated Successfully");
 
     } catch (e) {
 
-      showMsg("Error: ${e.toString()}");
+      showMsg("Update failed");
 
     } finally {
-      setState(() => loading = false);
+
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
-  // -------------------------
-  // UI
-  // -------------------------
+  // ================= UI =================
 
   @override
   Widget build(BuildContext context) {
+
+    ImageProvider? avatarImage;
+
+    if (imageFile != null) {
+      avatarImage = FileImage(imageFile!);
+    }
+    else if (profileUrl.isNotEmpty) {
+      avatarImage = NetworkImage(profileUrl);
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text("My Profile")),
@@ -156,20 +157,17 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
         child: Column(
           children: [
 
-            // Profile Image
+            // ================= PROFILE IMAGE =================
+
             GestureDetector(
               onTap: pickImage,
+
               child: CircleAvatar(
                 radius: 55,
                 backgroundColor: AppColors.lightGrey,
-                backgroundImage:
-                imageFile != null
-                    ? FileImage(imageFile!)
-                    : (profileUrl.isNotEmpty
-                    ? NetworkImage(profileUrl)
-                    : null) as ImageProvider?,
+                backgroundImage: avatarImage,
 
-                child: profileUrl.isEmpty && imageFile == null
+                child: avatarImage == null
                     ? const Icon(Icons.camera_alt, size: 30)
                     : null,
               ),
@@ -178,6 +176,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
             const SizedBox(height: 20),
 
             buildField("Name", nameCtrl),
+
             buildField("Phone", phoneCtrl,
                 keyboard: TextInputType.phone),
 
@@ -186,11 +185,11 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
 
             buildField("Address", addressCtrl),
 
-
             const SizedBox(height: 20),
 
             SizedBox(
               width: double.infinity,
+
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryBlue,
@@ -201,24 +200,21 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
 
                 child: loading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("UPDATE PROFILE"),
+                    : const Text("UPDATE PROFILE",
+                    style: TextStyle(color: Colors.white)),
               ),
             )
-
           ],
         ),
       ),
     );
   }
 
-  // -------------------------
-  // Input Widget
-  // -------------------------
+  // ================= INPUT =================
 
   Widget buildField(
       String label,
       TextEditingController controller, {
-        bool isPassword = false,
         TextInputType keyboard = TextInputType.text,
       }) {
 
@@ -228,7 +224,6 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
       child: TextField(
         controller: controller,
         keyboardType: keyboard,
-        obscureText: isPassword,
 
         decoration: InputDecoration(
           labelText: label,
@@ -238,9 +233,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
     );
   }
 
-  // -------------------------
-  // Snackbar
-  // -------------------------
+  // ================= SNACKBAR =================
 
   void showMsg(String msg) {
 
@@ -249,9 +242,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
     );
   }
 
-  // -------------------------
-  // Dispose
-  // -------------------------
+  // ================= DISPOSE =================
 
   @override
   void dispose() {
@@ -260,6 +251,7 @@ class _SalesProfileScreenState extends State<SalesProfileScreen> {
     phoneCtrl.dispose();
     emailCtrl.dispose();
     addressCtrl.dispose();
+
     super.dispose();
   }
 }

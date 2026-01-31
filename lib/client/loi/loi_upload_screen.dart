@@ -7,7 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/services/cloudinary_service.dart';
 import '../../core/services/notification_service.dart';
 
-
 class LoiUploadScreen extends StatefulWidget {
 
   final String quotationId;
@@ -46,41 +45,45 @@ class _LoiUploadScreenState extends State<LoiUploadScreen> {
 
     setState(() => loading = true);
 
-    final userId = FirebaseAuth.instance.currentUser!.uid;
+    final clientId = FirebaseAuth.instance.currentUser!.uid;
 
     final url =
     await CloudinaryService().uploadFile(file!);
 
-    // Save LOI
+    // ================= SAVE LOI =================
+
     await FirebaseFirestore.instance.collection("loi").add({
 
       "quotationId": widget.quotationId,
-      "clientId": userId,
+      "clientId": clientId,
+      "salesManagerId": widget.salesManagerId,
 
-      "status": "submitted",
+      "status": "pending",
       "attachmentUrl": url,
 
       "createdAt": Timestamp.now(),
     });
 
-    // Update quotation status
+    // ================= UPDATE QUOTATION =================
+
     await FirebaseFirestore.instance
         .collection("quotations")
         .doc(widget.quotationId)
         .update({
 
-      "status": "accepted",
+      "status": "loi_sent",
       "updatedAt": Timestamp.now(),
     });
 
-    // Notify sales manager
+    // ================= NOTIFY SALES =================
+
     await NotificationService().sendNotification(
 
       userId: widget.salesManagerId,
       role: "sales_manager",
 
       title: "LOI Received",
-      message: "Client accepted quotation and uploaded LOI",
+      message: "Client uploaded LOI document",
 
       type: "loi",
       referenceId: widget.quotationId,

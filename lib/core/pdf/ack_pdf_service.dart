@@ -5,10 +5,12 @@ import 'package:path_provider/path_provider.dart';
 
 class AckPdfService {
 
-  Future<String> generateAckPdf({
+  Future<File> generateAckPdf({
+
     required String quotationId,
     required String clientName,
-    required String decision,
+    required String decision, // accepted | rejected
+
   }) async {
 
     final pdf = pw.Document();
@@ -16,54 +18,53 @@ class AckPdfService {
     pdf.addPage(
 
       pw.Page(
+        margin: const pw.EdgeInsets.all(24),
+
         build: (context) {
 
-          return pw.Padding(
-            padding: const pw.EdgeInsets.all(24),
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
 
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-
-                pw.Text(
-                  "ACKNOWLEDGEMENT LETTER",
-                  style: pw.TextStyle(
-                    fontSize: 22,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
+              pw.Text(
+                "ACKNOWLEDGEMENT LETTER",
+                style: pw.TextStyle(
+                  fontSize: 22,
+                  fontWeight: pw.FontWeight.bold,
                 ),
+              ),
 
-                pw.SizedBox(height: 20),
+              pw.SizedBox(height: 20),
 
-                pw.Text("Date: ${DateFormat.yMMMd().format(DateTime.now())}"),
+              pw.Text(
+                "Date: ${DateFormat.yMMMd().format(DateTime.now())}",
+              ),
 
-                pw.SizedBox(height: 20),
+              pw.SizedBox(height: 20),
 
-                pw.Text("Quotation Reference: $quotationId"),
+              pw.Text("Quotation Reference: $quotationId"),
 
-                pw.SizedBox(height: 20),
+              pw.SizedBox(height: 20),
 
-                pw.Text("Dear $clientName,"),
+              pw.Text("Dear $clientName,"),
 
-                pw.SizedBox(height: 12),
+              pw.SizedBox(height: 12),
 
-                pw.Text(
-                  decision == "ACCEPTED"
-                      ? "We are pleased to inform you that your Letter of Intent (LOI) has been ACCEPTED. You may proceed with the payment process."
-                      : "We regret to inform you that your Letter of Intent (LOI) has been REJECTED. Please contact our sales department for clarification.",
-                ),
+              pw.Text(
+                decision == "accepted"
+                    ? "We are pleased to inform you that your Letter of Intent (LOI) has been ACCEPTED. You may proceed with the payment process."
+                    : "We regret to inform you that your Letter of Intent (LOI) has been REJECTED. Please contact our sales department for further clarification.",
+              ),
 
-                pw.SizedBox(height: 30),
+              pw.SizedBox(height: 30),
 
-                pw.Text("Regards,"),
+              pw.Text("Regards,"),
 
-                pw.SizedBox(height: 10),
+              pw.SizedBox(height: 10),
 
-                pw.Text("Sales Manager"),
-
-                pw.Text("ERP System"),
-              ],
-            ),
+              pw.Text("Sales Manager"),
+              pw.Text("ERP System"),
+            ],
           );
         },
       ),
@@ -71,12 +72,10 @@ class AckPdfService {
 
     final dir = await getTemporaryDirectory();
 
-    final file = File(
-      "${dir.path}/ACK_$quotationId.pdf",
-    );
+    final file = File("${dir.path}/ACK_$quotationId.pdf");
 
     await file.writeAsBytes(await pdf.save());
 
-    return file.path;
+    return file;
   }
 }

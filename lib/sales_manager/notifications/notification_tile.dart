@@ -21,19 +21,30 @@ class NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
 
     return Card(
-      color: isRead ? Colors.white : AppColors.neonBlue.withOpacity(0.15),
+
+      color: isRead
+          ? Colors.white
+          : AppColors.neonBlue.withOpacity(0.15),
+
+      margin: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ),
 
       child: ListTile(
 
         leading: Icon(
-          isRead ? Icons.notifications_none : Icons.notifications_active,
+          isRead
+              ? Icons.notifications_none
+              : Icons.notifications_active,
           color: AppColors.primaryBlue,
         ),
 
         title: Text(
           title,
           style: TextStyle(
-            fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+            fontWeight:
+            isRead ? FontWeight.normal : FontWeight.bold,
           ),
         ),
 

@@ -1,6 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class QuotationModel {
 
   String enquiryId;
+  String companyId;
   String clientId;
   String salesManagerId;
 
@@ -9,19 +12,20 @@ class QuotationModel {
 
   double baseFees;
   double discountPercent;
-  double taxPercent;
+  double taxPercentage;
   double taxAmount;
   double finalAmount;
 
   QuotationModel({
     required this.enquiryId,
+    required this.companyId,
     required this.clientId,
     required this.salesManagerId,
     required this.productId,
     required this.productName,
     required this.baseFees,
     required this.discountPercent,
-    required this.taxPercent,
+    required this.taxPercentage,
     required this.taxAmount,
     required this.finalAmount,
   });
@@ -35,6 +39,7 @@ class QuotationModel {
     return {
 
       "enquiryId": enquiryId,
+      "companyId": companyId,
       "clientId": clientId,
       "salesManagerId": salesManagerId,
 
@@ -45,7 +50,7 @@ class QuotationModel {
 
         "baseFees": baseFees,
         "discountPercent": discountPercent,
-        "taxPercentage": taxPercent,
+        "taxPercentage": taxPercentage,
 
         "taxAmount": taxAmount,
         "finalAmount": finalAmount,
@@ -53,11 +58,13 @@ class QuotationModel {
 
       "quotationAmount": finalAmount,
 
-      "status": "sent",
+      // Initial quotation state
+      "status": "loi_sent",
+
       "pdfUrl": "",
 
-      "createdAt": DateTime.now(),
-      "updatedAt": DateTime.now(),
+      "createdAt": Timestamp.now(),
+      "updatedAt": Timestamp.now(),
     };
   }
 }

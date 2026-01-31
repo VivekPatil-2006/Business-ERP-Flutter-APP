@@ -1,7 +1,6 @@
 class InvoiceItem {
 
   final String productId;
-  final String productName;
   final int quantity;
   final double unitCost;
   final String description;
@@ -11,7 +10,6 @@ class InvoiceItem {
 
   InvoiceItem({
     required this.productId,
-    required this.productName,
     required this.quantity,
     required this.unitCost,
     required this.description,
@@ -27,7 +25,6 @@ class InvoiceItem {
   Map<String, dynamic> toMap() {
     return {
       "productId": productId,
-      "productName": productName,
       "quantity": quantity,
       "unitCost": unitCost,
       "description": description,
@@ -45,8 +42,7 @@ class InvoiceItem {
 
     return InvoiceItem(
       productId: map['productId'] ?? "",
-      productName: map['productName'] ?? "",
-      quantity: (map['quantity'] ?? 0),
+      quantity: map['quantity'] ?? 0,
       unitCost: (map['unitCost'] ?? 0).toDouble(),
       description: map['description'] ?? "",
       federalTax: (map['federalTax'] ?? 0).toDouble(),

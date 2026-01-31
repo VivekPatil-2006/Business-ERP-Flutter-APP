@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
-import '../../core/pdf/invoice_pdf_service.dart';
-import '../../core/pdf/pdf_utils.dart';
-import '../../core/services/cloudinary_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../loi/client_loi_upload_screen.dart';
-
+import '../payments/client_payment_screen.dart';
 
 class ClientQuotationDetailsScreen extends StatefulWidget {
 
@@ -26,175 +22,57 @@ class ClientQuotationDetailsScreen extends StatefulWidget {
 class _ClientQuotationDetailsScreenState
     extends State<ClientQuotationDetailsScreen> {
 
-  bool paying = false;
-
   // =========================
-  // STATUS → STEP INDEX
+  // STEP INDEX
   // =========================
 
   int getStepIndex(String status) {
-    switch (status) {
-      case "sent":
-        return 0;
-      case "loi_sent":
-        return 1;
-      case "ack_sent":
-        return 2;
-      case "payment_done":
-        return 3;
-      default:
-        return 0;
-    }
+
+    if (status == "payment_done") return 2;
+    if (status == "loi_sent") return 1;
+    return 0;
   }
-
-  // =========================
-  // PAYMENT + INVOICE FLOW
-  // =========================
-
-  Future<void> makePayment(Map<String, dynamic> quoteData) async {
-
-    try {
-
-      setState(() => paying = true);
-
-      final uid = FirebaseAuth.instance.currentUser!.uid;
-
-      final amount =
-      (quoteData['quotationAmount'] ?? 0).toDouble();
-
-      final product =
-          quoteData['productSnapshot'] ?? {};
-
-      // ---------------------------
-      // GENERATE INVOICE PDF
-      // ---------------------------
-
-      final invoiceFile =
-      await InvoicePdfService().generateInvoicePdf(
-
-        quotationId: widget.quotationId,
-
-        productName:
-        product['productName'] ?? "Service",
-
-        amount: amount,
-
-        gst:
-        (product['cgstPercent'] ?? 0) +
-            (product['sgstPercent'] ?? 0),
-      );
-
-      // ---------------------------
-      // UPLOAD TO CLOUDINARY
-      // ---------------------------
-
-      final invoiceUrl =
-      await CloudinaryService().uploadFile(invoiceFile);
-
-      // ---------------------------
-      // CREATE PAYMENT RECORD
-      // ---------------------------
-
-      await FirebaseFirestore.instance
-          .collection("payments")
-          .add({
-
-        "quotationId": widget.quotationId,
-
-        "clientId": uid,
-
-        "companyId": quoteData['companyId'] ?? "",
-
-        "amount": amount,
-
-        "phase": "phase1",
-
-        "paymentType": "online",
-
-        "paymentMode": "upi",
-
-        "status": "completed",
-
-        "invoicePdfUrl": invoiceUrl,
-
-        "createdAt": Timestamp.now(),
-      });
-
-      // ---------------------------
-      // UPDATE QUOTATION STATUS
-      // ---------------------------
-
-      await FirebaseFirestore.instance
-          .collection("quotations")
-          .doc(widget.quotationId)
-          .update({
-
-        "status": "payment_done",
-      });
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Payment Successful")),
-      );
-
-    } catch (e) {
-
-      debugPrint("Payment Error => $e");
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Payment Failed")),
-      );
-
-    } finally {
-
-      if (mounted) {
-        setState(() => paying = false);
-      }
-    }
-  }
-
-  // =========================
-  // FETCH PAYMENT INVOICE
-  // =========================
-
-  Future<String?> fetchInvoiceUrl() async {
-
-    final snap = await FirebaseFirestore.instance
-        .collection("payments")
-        .where("quotationId", isEqualTo: widget.quotationId)
-        .where("status", isEqualTo: "completed")
-        .limit(1)
-        .get();
-
-    if (snap.docs.isEmpty) return null;
-
-    return snap.docs.first['invoicePdfUrl'];
-  }
-
-  // =====================================================
-  // UI
-  // =====================================================
 
   @override
   Widget build(BuildContext context) {
 
     return Scaffold(
+
       appBar: AppBar(
-        title: const Text("Quotation Details"),
+        title: const Text(
+          "Enquiries",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: AppColors.darkBlue,
+        foregroundColor: Colors.white,
       ),
 
-      body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance
+      // ✅ REALTIME STREAM
+      body: StreamBuilder<DocumentSnapshot>(
+
+        stream: FirebaseFirestore.instance
             .collection("quotations")
             .doc(widget.quotationId)
-            .get(),
+            .snapshots(),
 
         builder: (context, snapshot) {
 
-          if (!snapshot.hasData) {
+          // ---------------- LOADING ----------------
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
+          }
+
+          // ---------------- ERROR ----------------
+
+          if (snapshot.hasError) {
+            return const Center(child: Text("Failed to load quotation"));
+          }
+
+          // ---------------- EMPTY ----------------
+
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(child: Text("Quotation not found"));
           }
 
           final data =
@@ -206,7 +84,8 @@ class _ClientQuotationDetailsScreenState
           final status =
               data['status'] ?? "sent";
 
-          final currentStep = getStepIndex(status);
+          final currentStep =
+          getStepIndex(status);
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -215,36 +94,59 @@ class _ClientQuotationDetailsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
 
+                // ================= TIMELINE =================
+
                 buildTimeline(currentStep),
 
                 const SizedBox(height: 20),
 
-                buildRow("Product",
-                    product['productName'] ?? "-"),
+                // ================= DETAILS =================
 
-                buildRow("Final Amount",
-                    "₹ ${data['quotationAmount']}"),
+                buildRow(
+                  "Product",
+                  product['productName'] ?? "-",
+                ),
+
+                buildRow(
+                  "Final Amount",
+                  "₹ ${data['quotationAmount'] ?? 0}",
+                ),
 
                 const Divider(height: 30),
 
-                buildRow("Status", status.toUpperCase()),
+                buildRow(
+                  "Status",
+                  status.toUpperCase(),
+                ),
 
                 const SizedBox(height: 20),
 
-                // ================= LOI =================
+                // ================= UPLOAD LOI =================
 
-                if (status == "sent")
+                if (status != "loi_sent" &&
+                    status != "payment_done")
+
                   SizedBox(
                     width: double.infinity,
+
                     child: ElevatedButton(
-                      child: const Text("UPLOAD LOI"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.darkBlue,
+                      ),
+
+                      child: const Text(
+                        "UPLOAD LOI",
+                        style: TextStyle(color: Colors.white),
+                      ),
+
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
                                 ClientLoiUploadScreen(
-                                  quotationId: widget.quotationId,
+                                  quotationId:
+                                  widget.quotationId,
                                 ),
                           ),
                         );
@@ -252,9 +154,9 @@ class _ClientQuotationDetailsScreenState
                     ),
                   ),
 
-                // ================= PAY =================
+                // ================= PAYMENT =================
 
-                if (status == "ack_sent")
+                if (status == "loi_sent")
 
                   SizedBox(
                     width: double.infinity,
@@ -264,49 +166,40 @@ class _ClientQuotationDetailsScreenState
                         backgroundColor: Colors.green,
                       ),
 
-                      onPressed: paying
-                          ? null
-                          : () => makePayment(data),
+                      onPressed: () {
 
-                      child: paying
-                          ? const CircularProgressIndicator(
-                        color: Colors.white,
-                      )
-                          : const Text("PAY & GENERATE INVOICE"),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                            const ClientPaymentScreen(),
+                          ),
+                        );
+                      },
+
+                      child: const Text(
+                        "MAKE PAYMENT",
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
 
-                // ================= DOWNLOAD INVOICE =================
+                // ================= COMPLETED =================
 
                 if (status == "payment_done")
 
-                  FutureBuilder<String?>(
-                    future: fetchInvoiceUrl(),
-
-                    builder: (context, invoiceSnap) {
-
-                      if (!invoiceSnap.hasData) {
-                        return const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(),
-                        );
-                      }
-
-                      final url = invoiceSnap.data;
-
-                      if (url == null) {
-                        return const Text("Invoice not found");
-                      }
-
-                      return ElevatedButton.icon(
-                        icon: const Icon(Icons.download),
-                        label: const Text("DOWNLOAD INVOICE"),
-
-                        onPressed: () {
-                          PdfUtils.openPdf(url);
-                        },
-                      );
-                    },
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 16),
+                      child: Text(
+                        "Payment Completed ✅",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -316,102 +209,105 @@ class _ClientQuotationDetailsScreenState
     );
   }
 
-  // =====================================================
-  // UI HELPERS
-  // =====================================================
+  // ================= TIMELINE =================
 
   Widget buildTimeline(int currentStep) {
 
     final steps = [
       "Quotation",
       "LOI",
-      "ACK",
       "Payment",
-      "Invoice",
     ];
 
     return Row(
-      children: List.generate(steps.length * 2 - 1, (index) {
+      children: List.generate(
+        steps.length * 2 - 1,
+            (index) {
 
-        // ================= CONNECTING LINE =================
+          // ---------- CONNECTOR ----------
+          if (index.isOdd) {
 
-        if (index.isOdd) {
-          final stepIndex = index ~/ 2;
+            final stepIndex = index ~/ 2;
 
-          final isActive = stepIndex < currentStep;
+            final isActive =
+                stepIndex < currentStep;
 
-          return Expanded(
-            child: Container(
-              height: 3,
-              color: isActive ? Colors.green : Colors.grey.shade300,
-            ),
+            return Expanded(
+              child: Container(
+                height: 3,
+                color: isActive
+                    ? Colors.green
+                    : Colors.grey.shade300,
+              ),
+            );
+          }
+
+          // ---------- STEP ----------
+          final step = index ~/ 2;
+
+          final isCompleted =
+              step < currentStep;
+
+          final isCurrent =
+              step == currentStep;
+
+          Color circleColor = Colors.grey;
+
+          if (isCompleted) {
+            circleColor = Colors.green;
+          }
+
+          if (isCurrent) {
+            circleColor = AppColors.primaryBlue;
+          }
+
+          return Column(
+            children: [
+
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: circleColor,
+                  shape: BoxShape.circle,
+                ),
+
+                child: Center(
+                  child: Icon(
+                    isCompleted
+                        ? Icons.check
+                        : Icons.circle,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              SizedBox(
+                width: 70,
+
+                child: Text(
+                  steps[step],
+                  textAlign: TextAlign.center,
+
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isCurrent
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ],
           );
-        }
-
-        // ================= STEP CIRCLE =================
-
-        final step = index ~/ 2;
-
-        final isCompleted = step < currentStep;
-        final isCurrent = step == currentStep;
-
-        Color circleColor = Colors.grey;
-
-        if (isCompleted) circleColor = Colors.green;
-        if (isCurrent) circleColor = AppColors.primaryBlue;
-
-        return Column(
-          children: [
-
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: circleColor,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  if (isCurrent)
-                    BoxShadow(
-                      color: circleColor.withOpacity(0.4),
-                      blurRadius: 8,
-                    ),
-                ],
-              ),
-
-              child: Center(
-                child: Icon(
-                  isCompleted
-                      ? Icons.check
-                      : Icons.circle,
-                  size: 14,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            SizedBox(
-              width: 70,
-              child: Text(
-                steps[step],
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight:
-                  isCurrent ? FontWeight.bold : FontWeight.normal,
-                  color: isCompleted || isCurrent
-                      ? Colors.black
-                      : Colors.grey,
-                ),
-              ),
-            ),
-          ],
-        );
-      }),
+        },
+      ),
     );
   }
+
+  // ================= ROW UI =================
 
   Widget buildRow(String title, String value) {
 
@@ -423,9 +319,11 @@ class _ClientQuotationDetailsScreenState
 
           SizedBox(
             width: 120,
+
             child: Text(
               "$title:",
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold),
             ),
           ),
 

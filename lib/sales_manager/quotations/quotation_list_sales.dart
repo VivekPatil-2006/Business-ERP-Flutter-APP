@@ -1,102 +1,228 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-import '../../core/pdf/pdf_utils.dart';
+import '../../core/theme/app_colors.dart';
+import 'quotation_details_screen.dart';
+import 'create_quotation_screen.dart';
 
-
-class QuotationListSales extends StatelessWidget {
+class QuotationListSales extends StatefulWidget {
   const QuotationListSales({super.key});
 
   @override
+  State<QuotationListSales> createState() => _QuotationListSalesState();
+}
+
+class _QuotationListSalesState extends State<QuotationListSales> {
+
+  final _searchCtrl = TextEditingController();
+  String _searchText = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+
+    final salesManagerId = FirebaseAuth.instance.currentUser!.uid;
+
     return Scaffold(
+
       appBar: AppBar(
-        title: const Text("Client LOIs"),
+        title: const Text(
+          "My Quotations",
+          style: TextStyle(
+            fontWeight: FontWeight.bold, // ✅ bold title
+          ),
+        ),
+        backgroundColor: AppColors.darkBlue,
+        foregroundColor: Colors.white, // ✅ affects title + back arrow
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection("loi")
-            .orderBy("createdAt", descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text("No LOIs received"));
-          }
 
-          final lois = snapshot.data!.docs;
-
-          return ListView.builder(
-            itemCount: lois.length,
-            itemBuilder: (context, index) {
-              final l = lois[index];
-              final data = l.data() as Map<String, dynamic>;
-
-              final quotationId = data['quotationId'] ?? 'N/A';
-              final status = data['status'] ?? 'unknown';
-              final ackPdfUrl = data['ackPdfUrl'];
-
-              return Card(
-                margin: const EdgeInsets.all(10),
-                child: ListTile(
-                  title: Text("Quotation ID: $quotationId"),
-                  subtitle: Text("Status: $status"),
-                  trailing: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // ACCEPT BUTTON
-                      if (status == "sent")
-                        ElevatedButton(
-                          onPressed: () async {
-                            // Your ACK logic here
-                            // Example:
-                            // await NotificationService.sendAck(quotationId);
-                          },
-                          child: const Text("Accept"),
-                        ),
-
-                      // VIEW / DOWNLOAD PDF
-                      if (status == "accepted" && ackPdfUrl != null)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.visibility),
-                              onPressed: () {
-                                PdfUtils.openPdf(ackPdfUrl);
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.download),
-                              onPressed: () async {
-                                await PdfUtils.downloadPdf(
-                                  url: ackPdfUrl,
-                                  fileName: "ACK_$quotationId",
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-
-                      // ACCEPTED TEXT (fallback)
-                      if (status == "accepted" && ackPdfUrl == null)
-                        const Text(
-                          "Accepted",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            },
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppColors.primaryBlue,
+        child: const Icon(Icons.add,color: Colors.white),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateQuotationScreen()),
           );
         },
+      ),
+
+      body: Column(
+        children: [
+
+          // ================= SEARCH =================
+
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) {
+                setState(() => _searchText = v.toLowerCase());
+              },
+              decoration: InputDecoration(
+                hintText: 'Search quotation',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+
+          // ================= LIST =================
+
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+
+              stream: FirebaseFirestore.instance
+                  .collection("quotations")
+                  .where("salesManagerId", isEqualTo: salesManagerId)
+                  .orderBy("createdAt", descending: true)
+                  .snapshots(),
+
+              builder: (context, snapshot) {
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text("No quotations found"));
+                }
+
+                final docs = snapshot.data!.docs;
+
+                return ListView.builder(
+
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: docs.length,
+
+                  itemBuilder: (context, index) {
+
+                    final doc = docs[index];
+                    final data = doc.data() as Map<String, dynamic>;
+
+                    final quotationId = doc.id;
+
+                    final clientId = data['clientId'];
+                    final status = data['status'] ?? "sent";
+
+                    final productSnapshot =
+                        data['productSnapshot'] ?? {};
+
+                    final productId =
+                    productSnapshot['productId'];
+
+                    final amount =
+                        data['quotationAmount'] ?? 0;
+
+                    // ---------- SEARCH FILTER ----------
+
+                    if (_searchText.isNotEmpty &&
+                        !quotationId.toLowerCase().contains(_searchText)) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+
+                      child: ListTile(
+
+                        contentPadding: const EdgeInsets.all(16),
+
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => QuotationDetailsScreen(
+                                quotationId: quotationId,
+                                clientId: clientId,
+                                productId: productId,
+                              ),
+                            ),
+                          );
+                        },
+
+                        title: Text(
+                          "Quotation #$quotationId",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+
+                              Text("Amount: ₹ $amount"),
+
+                              const SizedBox(height: 6),
+
+                              _statusChip(status),
+                            ],
+                          ),
+                        ),
+
+                        trailing: const Icon(Icons.chevron_right),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= STATUS CHIP =================
+
+  Widget _statusChip(String status) {
+
+    Color color;
+
+    switch (status) {
+      case "loi_sent":
+        color = Colors.blue;
+        break;
+      case "payment_done":
+        color = Colors.green;
+        break;
+      default:
+        color = Colors.orange;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
       ),
     );
   }

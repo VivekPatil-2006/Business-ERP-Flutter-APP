@@ -6,8 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/services/cloudinary_service.dart';
 import '../../core/theme/app_colors.dart';
 
-
 class ClientProfileScreen extends StatefulWidget {
+
   final String clientId;
 
   const ClientProfileScreen({
@@ -16,7 +16,8 @@ class ClientProfileScreen extends StatefulWidget {
   });
 
   @override
-  State<ClientProfileScreen> createState() => _ClientProfileScreenState();
+  State<ClientProfileScreen> createState() =>
+      _ClientProfileScreenState();
 }
 
 class _ClientProfileScreenState extends State<ClientProfileScreen> {
@@ -31,11 +32,15 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   final Map<String, TextEditingController> controllers = {};
 
+  bool controllersInitialized = false;
+
   // ===========================
-  // INIT CONTROLLERS
+  // INIT CONTROLLERS (ONCE)
   // ===========================
 
   void initControllers(Map<String, dynamic> data) {
+
+    if (controllersInitialized) return;
 
     final fields = [
       "companyName",
@@ -58,6 +63,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       controllers[f] =
           TextEditingController(text: data[f]?.toString() ?? "");
     }
+
+    controllersInitialized = true;
   }
 
   // ===========================
@@ -72,6 +79,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     await ImagePicker().pickImage(source: ImageSource.gallery);
 
     if (picked != null) {
+
       setState(() {
         selectedImage = File(picked.path);
       });
@@ -97,6 +105,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
     } catch (e) {
 
+      debugPrint("Image Upload Error => $e");
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Image upload failed")),
       );
@@ -105,7 +115,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
     } finally {
 
-      setState(() => uploadingImage = false);
+      if (mounted) {
+        setState(() => uploadingImage = false);
+      }
     }
   }
 
@@ -151,13 +163,17 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
     } catch (e) {
 
+      debugPrint("Profile Update Error => $e");
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Failed to update profile")),
       );
 
     } finally {
 
-      setState(() => saving = false);
+      if (mounted) {
+        setState(() => saving = false);
+      }
     }
   }
 
@@ -171,8 +187,15 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     return Scaffold(
 
       appBar: AppBar(
-        title: const Text("Client Profile"),
+        title: const Text(
+          "Client Profile",
+          style: TextStyle(
+            fontWeight: FontWeight.bold, // ✅ bold title
+          ),
+        ),
         backgroundColor: AppColors.darkBlue,
+        foregroundColor: Colors.white,
+
 
         actions: [
 
@@ -189,29 +212,31 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         ],
       ),
 
-      body: FutureBuilder<DocumentSnapshot>(
+      // ===========================
+      // REALTIME STREAM
+      // ===========================
 
-        future: firestore
+      body: StreamBuilder<DocumentSnapshot>(
+
+        stream: firestore
             .collection("clients")
             .doc(widget.clientId)
-            .get(),
+            .snapshots(),
 
         builder: (context, snapshot) {
 
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.data!.exists) {
+          if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(child: Text("Client not found"));
           }
 
           final data =
           snapshot.data!.data() as Map<String, dynamic>;
 
-          if (controllers.isEmpty) {
-            initControllers(data);
-          }
+          initControllers(data);
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -237,14 +262,19 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                         selectedImage != null
                             ? FileImage(selectedImage!)
                             : (data['profileImage'] != null &&
-                            data['profileImage'] != "")
+                            data['profileImage']
+                                .toString()
+                                .isNotEmpty)
                             ? NetworkImage(data['profileImage'])
                             : null,
 
                         child:
+
                         selectedImage == null &&
                             (data['profileImage'] == null ||
-                                data['profileImage'] == "")
+                                data['profileImage']
+                                    .toString()
+                                    .isEmpty)
                             ? const Icon(
                           Icons.business,
                           size: 40,
@@ -324,9 +354,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
-                        foregroundColor: Colors.white, // ✅ FIX
-                        padding:
-                        const EdgeInsets.symmetric(vertical: 14),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
 
                       onPressed: saving ? null : saveProfile,
@@ -394,7 +423,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 
   // ===========================
-  // FIELD WIDGET
+  // FIELD
   // ===========================
 
   Widget buildField(String label, String key) {

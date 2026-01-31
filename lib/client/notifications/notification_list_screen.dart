@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/services/notification_service.dart';
+import '../../core/theme/app_colors.dart';
 import 'notification_tile.dart';
-
 
 class NotificationListScreen extends StatelessWidget {
 
@@ -18,14 +18,31 @@ class NotificationListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Notifications")),
+      appBar: AppBar(
+        backgroundColor: AppColors.darkBlue, // navy blue
+        elevation: 0,
+
+        iconTheme: const IconThemeData(
+          color: Colors.white, // back arrow
+        ),
+
+        title: const Text(
+          "Notifications",
+          style: TextStyle(
+            color: Colors.white, // text in white
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+
 
       body: StreamBuilder<QuerySnapshot>(
 
         stream: FirebaseFirestore.instance
             .collection("notifications")
             .where("userId", isEqualTo: userId)
-            .snapshots(), // ❗ removed orderBy to avoid index crash
+            .orderBy("createdAt", descending: true) // ✅ realtime ordered
+            .snapshots(),
 
         builder: (context, snapshot) {
 
@@ -35,52 +52,39 @@ class NotificationListScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // ---------------- NO DATA ----------------
+          // ---------------- EMPTY ----------------
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text("No Notifications"));
           }
 
-          // ---------------- SORT LOCALLY ----------------
-
-          final notifications = snapshot.data!.docs.toList()
-            ..sort((a, b) {
-
-              final aTime =
-              a.data().toString().contains("createdAt")
-                  ? a['createdAt']
-                  : Timestamp.now();
-
-              final bTime =
-              b.data().toString().contains("createdAt")
-                  ? b['createdAt']
-                  : Timestamp.now();
-
-              return bTime.compareTo(aTime);
-            });
+          final notifications = snapshot.data!.docs;
 
           // ---------------- UI ----------------
 
           return ListView.builder(
+            padding: const EdgeInsets.only(bottom: 10),
             itemCount: notifications.length,
 
             itemBuilder: (context, index) {
 
               final n = notifications[index];
+              final data = n.data() as Map<String, dynamic>;
 
               return NotificationTile(
 
-                title: n['title'] ?? "Notification",
+                title: data['title'] ?? "Notification",
 
-                message: n['message'] ?? "",
+                message: data['message'] ?? "",
 
-                isRead: n['isRead'] ?? false,
+                isRead: data['isRead'] ?? false,
 
                 onTap: () async {
 
-                  await NotificationService()
-                      .markAsRead(n.id);
-
+                  if (!(data['isRead'] ?? false)) {
+                    await NotificationService()
+                        .markAsRead(n.id);
+                  }
                 },
               );
             },

@@ -6,7 +6,7 @@ import '../services/cloudinary_service.dart';
 
 class PaymentInvoicePdfService {
 
-  Future<String> generatePaymentInvoice({
+  Future<String> generatePaymentReceipt({
 
     required String invoiceNumber,
     required String clientName,
@@ -20,17 +20,16 @@ class PaymentInvoicePdfService {
     pdf.addPage(
 
       pw.Page(
+        margin: const pw.EdgeInsets.all(24),
 
         build: (context) {
 
           return pw.Column(
-
             crossAxisAlignment: pw.CrossAxisAlignment.start,
-
             children: [
 
               pw.Text(
-                "PAYMENT INVOICE",
+                "PAYMENT RECEIPT",
                 style: pw.TextStyle(
                   fontSize: 22,
                   fontWeight: pw.FontWeight.bold,
@@ -40,15 +39,17 @@ class PaymentInvoicePdfService {
               pw.SizedBox(height: 20),
 
               pw.Text("Invoice No: $invoiceNumber"),
-              pw.Text("Client: $clientName"),
+              pw.Text("Client Name: $clientName"),
               pw.Text("Payment Mode: $paymentMode"),
-              pw.Text("Total Paid: ₹ $amount"),
+
+              pw.SizedBox(height: 12),
+
+              pw.Text("Paid Amount: ₹ $amount"),
 
               pw.SizedBox(height: 30),
 
-              pw.Text("Thank you for your business."),
-              pw.Text("Demo Company Pvt Ltd"),
-
+              pw.Text("Payment Verified"),
+              pw.Text("ERP System"),
             ],
           );
         },
@@ -56,11 +57,13 @@ class PaymentInvoicePdfService {
     );
 
     final dir = await getTemporaryDirectory();
-    final file = File("${dir.path}/payment_$invoiceNumber.pdf");
+
+    final file =
+    File("${dir.path}/receipt_$invoiceNumber.pdf");
 
     await file.writeAsBytes(await pdf.save());
 
-    // Upload to Cloudinary
+    // Upload receipt to cloud
     final url = await CloudinaryService().uploadFile(file);
 
     return url;

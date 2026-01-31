@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'notification_tile.dart';
 import '../../core/services/notification_service.dart';
 
-
 class NotificationListScreen extends StatelessWidget {
 
   final String userId;
@@ -18,14 +17,19 @@ class NotificationListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Notifications")),
+
+      appBar: AppBar(
+        title: const Text("Notifications"),
+      ),
 
       body: StreamBuilder<QuerySnapshot>(
 
+        // ✅ TRUE REALTIME STREAM WITH SERVER SORTING
         stream: FirebaseFirestore.instance
             .collection("notifications")
             .where("userId", isEqualTo: userId)
-            .snapshots(), // ❗ removed orderBy to avoid index crash
+            .orderBy("createdAt", descending: true)
+            .snapshots(),
 
         builder: (context, snapshot) {
 
@@ -35,52 +39,64 @@ class NotificationListScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // ---------------- NO DATA ----------------
+          // ---------------- ERROR ----------------
+
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text("Failed to load notifications"),
+            );
+          }
+
+          // ---------------- EMPTY ----------------
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text("No Notifications"));
           }
 
-          // ---------------- SORT LOCALLY ----------------
-
-          final notifications = snapshot.data!.docs.toList()
-            ..sort((a, b) {
-
-              final aTime =
-              a.data().toString().contains("createdAt")
-                  ? a['createdAt']
-                  : Timestamp.now();
-
-              final bTime =
-              b.data().toString().contains("createdAt")
-                  ? b['createdAt']
-                  : Timestamp.now();
-
-              return bTime.compareTo(aTime);
-            });
+          final notifications = snapshot.data!.docs;
 
           // ---------------- UI ----------------
 
           return ListView.builder(
+
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+
             itemCount: notifications.length,
 
             itemBuilder: (context, index) {
 
-              final n = notifications[index];
+              final doc = notifications[index];
+              final data = doc.data() as Map<String, dynamic>;
+
+              final String title = data['title'] ?? "Notification";
+              final String message = data['message'] ?? "";
+              final bool isRead = data['isRead'] ?? false;
 
               return NotificationTile(
 
-                title: n['title'] ?? "Notification",
+                title: title,
 
-                message: n['message'] ?? "",
+                message: message,
 
-                isRead: n['isRead'] ?? false,
+                isRead: isRead,
 
                 onTap: () async {
 
-                  await NotificationService()
-                      .markAsRead(n.id);
+                  try {
 
+                    // ✅ REALTIME UPDATE (UI AUTO REFRESHES)
+                    await NotificationService()
+                        .markAsRead(doc.id);
+
+                  } catch (e) {
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to mark as read"),
+                      ),
+                    );
+                  }
                 },
               );
             },

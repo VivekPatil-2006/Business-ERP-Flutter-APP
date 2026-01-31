@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/services/cloudinary_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/theme/app_colors.dart';
-
 
 class ClientPaymentScreen extends StatefulWidget {
   const ClientPaymentScreen({super.key});
@@ -17,31 +17,25 @@ class ClientPaymentScreen extends StatefulWidget {
 
 class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
 
-  final FirebaseFirestore firestore = FirebaseFirestore.instance;
+  final firestore = FirebaseFirestore.instance;
+  final auth = FirebaseAuth.instance;
 
   String? selectedInvoiceId;
+  Map<String, dynamic>? selectedInvoiceData;
+
   String phase = "phase1";
   String paymentMode = "upi";
 
   final amountCtrl = TextEditingController();
 
   File? proofFile;
+
   bool loading = false;
-
-  // ================= FETCH UNPAID INVOICES =================
-
-  Future<List<QueryDocumentSnapshot>> fetchInvoices() async {
-    final snap = await firestore
-        .collection('invoices')
-        .where("paymentStatus", isEqualTo: "unpaid")
-        .get();
-
-    return snap.docs;
-  }
 
   // ================= PICK IMAGE =================
 
-  pickImage() async {
+  Future<void> pickImage() async {
+
     final picked =
     await ImagePicker().pickImage(source: ImageSource.gallery);
 
@@ -54,93 +48,187 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
 
   // ================= SUBMIT PAYMENT =================
 
-  submitPayment() async {
+  Future<void> submitPayment() async {
 
     if (proofFile == null ||
         selectedInvoiceId == null ||
+        selectedInvoiceData == null ||
         amountCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Complete all fields")),
-      );
+
+      showMsg("Complete all fields");
       return;
     }
 
-    setState(() => loading = true);
+    try {
 
-    final proofUrl =
-    await CloudinaryService().uploadFile(proofFile!);
+      setState(() => loading = true);
 
-    await firestore.collection('payments').add({
+      final uid = auth.currentUser!.uid;
 
-      "invoiceId": selectedInvoiceId,
-      "clientId": "0Tsr8JPgnOPGA83IxlOiltATJTp1", // replace with auth uid
-      "amount": double.parse(amountCtrl.text),
-      "phase": phase,
-      "paymentMode": paymentMode,
-      "paymentType": "online",
-      "paymentProofUrl": proofUrl,
-      "status": "pending",
-      "createdAt": Timestamp.now(),
-    });
+      final proofUrl =
+      await CloudinaryService().uploadFile(proofFile!);
 
-    await NotificationService().sendNotification(
-      userId: "sales_manager_id_here",
-      role: "sales_manager",
-      title: "Payment Submitted",
-      message: "Client submitted payment proof",
-      type: "payment",
-      referenceId: selectedInvoiceId!,
-    );
+      final quotationId =
+      selectedInvoiceData!['quotationId'];
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Payment Submitted Successfully")),
-    );
+      final companyId =
+      selectedInvoiceData!['companyId'];
 
-    Navigator.pop(context);
-    setState(() => loading = false);
+      final salesManagerId =
+      selectedInvoiceData!['salesManagerId'];
+
+      final invoiceNumber =
+      selectedInvoiceData!['invoiceNumber'];
+
+      final paymentType =
+      (paymentMode == "upi" || paymentMode == "net_banking")
+          ? "online"
+          : "offline";
+
+      final double amount =
+          double.tryParse(amountCtrl.text) ?? 0;
+
+      // SAVE PAYMENT
+      await firestore.collection('payments').add({
+
+        "invoiceId": selectedInvoiceId,
+        "invoiceNumber": invoiceNumber,
+
+        "quotationId": quotationId,
+        "companyId": companyId,
+
+        "clientId": uid,
+        "salesManagerId": salesManagerId,
+
+        "amount": amount,
+
+        "phase": phase,
+        "paymentType": paymentType,
+        "paymentMode": paymentMode,
+
+        "paymentProofUrl": proofUrl,
+
+        "status": "completed",
+        "createdAt": Timestamp.now(),
+      });
+
+      // UPDATE INVOICE
+      await firestore
+          .collection("invoices")
+          .doc(selectedInvoiceId)
+          .update({
+
+        "paymentStatus": "paid",
+        "paidAt": Timestamp.now(),
+      });
+
+      // UPDATE QUOTATION
+      if (quotationId != null) {
+        await firestore
+            .collection("quotations")
+            .doc(quotationId)
+            .update({
+
+          "status": "payment_done",
+          "updatedAt": Timestamp.now(),
+        });
+      }
+
+      // NOTIFY SALES
+      await NotificationService().sendNotification(
+
+        userId: salesManagerId,
+        role: "sales_manager",
+
+        title: "Payment Completed",
+        message:
+        "Client completed payment for Invoice $invoiceNumber",
+
+        type: "payment",
+        referenceId: quotationId,
+      );
+
+      showMsg("Payment Successful ✅");
+
+      Navigator.pop(context);
+
+    } catch (e) {
+
+      debugPrint("Payment Error => $e");
+      showMsg("Payment Failed");
+
+    } finally {
+
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
   }
 
   // ================= UI =================
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
+
       appBar: AppBar(
-        title: const Text("Make Payment"),
         backgroundColor: AppColors.darkBlue,
+        elevation: 0,
+
+        // 👈 back arrow & icons in white
+        iconTheme: const IconThemeData(
+          color: Colors.white,
+        ),
+
+        // 👈 title text in white
+        title: const Text(
+          "Make Payment",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
 
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(12),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.darkBlue,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-          onPressed: loading ? null : submitPayment,
-          child: loading
-              ? const SizedBox(
-            height: 20,
-            width: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
+
+        child: SizedBox(
+          width: double.infinity,
+
+          child: ElevatedButton(
+
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.darkBlue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
             ),
-          )
-              : const Text(
-            "SUBMIT PAYMENT",
-            style: TextStyle(fontSize: 16),
+
+            onPressed: loading ? null : submitPayment,
+
+            child: loading
+                ? const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+                : const Text(
+              "SUBMIT PAYMENT",
+              style: TextStyle(fontSize: 16),
+            ),
           ),
         ),
       ),
 
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
+
         child: Column(
           children: [
-
-            // ================= INVOICE =================
 
             buildCard(
               title: "Invoice Selection",
@@ -150,17 +238,17 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
 
             const SizedBox(height: 16),
 
-            // ================= PAYMENT DETAILS =================
-
             buildCard(
               title: "Payment Details",
               icon: Icons.payment,
+
               child: Column(
                 children: [
 
                   TextField(
                     controller: amountCtrl,
                     keyboardType: TextInputType.number,
+
                     decoration: const InputDecoration(
                       labelText: "Amount",
                       prefixIcon: Icon(Icons.currency_rupee),
@@ -181,18 +269,21 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
 
             const SizedBox(height: 16),
 
-            // ================= PAYMENT PROOF =================
-
             buildCard(
               title: "Payment Proof",
               icon: Icons.upload_file,
+
               child: Column(
                 children: [
 
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.upload),
-                    label: const Text("Upload Proof"),
-                    onPressed: pickImage,
+                  SizedBox(
+                    width: double.infinity,
+
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.upload),
+                      label: const Text("Upload Proof"),
+                      onPressed: pickImage,
+                    ),
                   ),
 
                   const SizedBox(height: 10),
@@ -200,19 +291,26 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+
                       Icon(
                         proofFile == null
                             ? Icons.cancel
                             : Icons.check_circle,
+
                         color: proofFile == null
                             ? Colors.red
                             : Colors.green,
                       ),
+
                       const SizedBox(width: 6),
-                      Text(
-                        proofFile == null
-                            ? "No file selected"
-                            : "Proof uploaded",
+
+                      Flexible(
+                        child: Text(
+                          proofFile == null
+                              ? "No file selected"
+                              : "Proof uploaded",
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
@@ -225,15 +323,151 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
     );
   }
 
-  // ================= REUSABLE UI =================
+  // ================= REALTIME INVOICE DROPDOWN =================
+
+  Widget buildInvoiceDropdown() {
+
+    final uid = auth.currentUser!.uid;
+
+    return StreamBuilder<QuerySnapshot>(
+
+      stream: firestore
+          .collection("invoices")
+          .where("clientId", isEqualTo: uid)
+          .where("paymentStatus", isEqualTo: "unpaid")
+          .orderBy("createdAt", descending: true)
+          .snapshots(),
+
+      builder: (context, snapshot) {
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const CircularProgressIndicator();
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Text("No pending invoices");
+        }
+
+        final invoices = snapshot.data!.docs;
+
+        return DropdownButtonFormField<String>(
+
+          isExpanded: true, // ✅ FIX OVERFLOW
+
+          value: selectedInvoiceId,
+
+          decoration: const InputDecoration(
+            labelText: "Select Invoice",
+            border: OutlineInputBorder(),
+          ),
+
+          items: invoices.map((inv) {
+
+            final data =
+            inv.data() as Map<String, dynamic>;
+
+            return DropdownMenuItem<String>(
+              value: inv.id,
+
+              child: Text(
+                "${data['invoiceNumber']}  |  ₹${data['totalAmount']}",
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+
+          }).toList(),
+
+          onChanged: (val) async {
+
+            if (val == null) return;
+
+            final snap =
+            await firestore.collection("invoices").doc(val).get();
+
+            if (snap.exists) {
+
+              setState(() {
+
+                selectedInvoiceId = val;
+                selectedInvoiceData = snap.data();
+
+                amountCtrl.text =
+                    (snap['totalAmount'] ?? 0).toString();
+              });
+            }
+          },
+        );
+      },
+    );
+  }
+
+  // ================= DROPDOWNS =================
+
+  Widget buildPhaseDropdown() {
+
+    return DropdownButtonFormField<String>(
+
+      isExpanded: true,
+
+      value: phase,
+
+      decoration: const InputDecoration(
+        labelText: "Payment Phase",
+        border: OutlineInputBorder(),
+      ),
+
+      items: const [
+
+        DropdownMenuItem(value: "phase1", child: Text("Advance Payment")),
+        DropdownMenuItem(value: "phase2", child: Text("Interim Payment")),
+        DropdownMenuItem(value: "phase3", child: Text("Final Payment")),
+      ],
+
+      onChanged: (val) {
+        setState(() => phase = val!);
+      },
+    );
+  }
+
+  Widget buildModeDropdown() {
+
+    return DropdownButtonFormField<String>(
+
+      isExpanded: true,
+
+      value: paymentMode,
+
+      decoration: const InputDecoration(
+        labelText: "Payment Mode",
+        border: OutlineInputBorder(),
+      ),
+
+      items: const [
+
+        DropdownMenuItem(value: "upi", child: Text("UPI")),
+        DropdownMenuItem(value: "net_banking", child: Text("Net Banking")),
+        DropdownMenuItem(value: "cash", child: Text("Cash")),
+        DropdownMenuItem(value: "cheque", child: Text("Cheque")),
+      ],
+
+      onChanged: (val) {
+        setState(() => paymentMode = val!);
+      },
+    );
+  }
+
+  // ================= CARD =================
 
   Widget buildCard({
     required String title,
     required IconData icon,
     required Widget child,
   }) {
+
     return Container(
       padding: const EdgeInsets.all(14),
+
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -244,6 +478,7 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
           ),
         ],
       ),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -252,13 +487,8 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
             children: [
               Icon(icon, color: AppColors.darkBlue),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
-              ),
+              Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
 
@@ -270,81 +500,18 @@ class _ClientPaymentScreenState extends State<ClientPaymentScreen> {
     );
   }
 
-  // ================= DROPDOWNS =================
+  // ================= MESSAGE =================
 
-  Widget buildInvoiceDropdown() {
-    return FutureBuilder(
-      future: fetchInvoices(),
-      builder: (context, snapshot) {
+  void showMsg(String msg) {
 
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final invoices = snapshot.data!;
-
-        if (invoices.isEmpty) {
-          return const Text("No unpaid invoices");
-        }
-
-        return DropdownButtonFormField(
-          decoration: const InputDecoration(
-            labelText: "Select Invoice",
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.description),
-          ),
-          items: invoices.map((inv) {
-            return DropdownMenuItem(
-              value: inv.id,
-              child: Text(inv['invoiceNumber']),
-            );
-          }).toList(),
-
-          onChanged: (val) {
-            selectedInvoiceId = val.toString();
-          },
-        );
-      },
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Widget buildPhaseDropdown() {
-    return DropdownButtonFormField(
-      value: phase,
-      decoration: const InputDecoration(
-        labelText: "Payment Phase",
-        border: OutlineInputBorder(),
-        prefixIcon: Icon(Icons.timeline),
-      ),
-      items: const [
-        DropdownMenuItem(value: "phase1", child: Text("Advance Payment")),
-        DropdownMenuItem(value: "phase2", child: Text("Interim Payment")),
-        DropdownMenuItem(value: "phase3", child: Text("Final Payment")),
-      ],
-      onChanged: (val) {
-        setState(() => phase = val!);
-      },
-    );
-  }
+  @override
+  void dispose() {
 
-  Widget buildModeDropdown() {
-    return DropdownButtonFormField(
-      value: paymentMode,
-      decoration: const InputDecoration(
-        labelText: "Payment Mode",
-        border: OutlineInputBorder(),
-        prefixIcon: Icon(Icons.account_balance_wallet),
-      ),
-      items: const [
-        DropdownMenuItem(value: "upi", child: Text("UPI")),
-        DropdownMenuItem(value: "net_banking", child: Text("Net Banking")),
-        DropdownMenuItem(value: "cash", child: Text("Cash")),
-        DropdownMenuItem(value: "cheque", child: Text("Cheque")),
-        DropdownMenuItem(value: "cheque", child: Text("DD")),
-      ],
-      onChanged: (val) {
-        setState(() => paymentMode = val!);
-      },
-    );
+    amountCtrl.dispose();
+    super.dispose();
   }
 }

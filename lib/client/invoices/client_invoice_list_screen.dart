@@ -17,7 +17,7 @@ class ClientInvoiceListScreen extends StatefulWidget {
 class _ClientInvoiceListScreenState
     extends State<ClientInvoiceListScreen> {
 
-  final uid = FirebaseAuth.instance.currentUser!.uid;
+  final String uid = FirebaseAuth.instance.currentUser!.uid;
 
   String searchText = "";
   String filterStatus = "all";
@@ -27,17 +27,12 @@ class _ClientInvoiceListScreenState
   // ======================
 
   bool filterInvoice(QueryDocumentSnapshot doc) {
-
     final data = doc.data() as Map<String, dynamic>;
 
-    final status =
-    (data['status'] ?? "").toString().toLowerCase();
+    final paymentStatus =
+    (data['paymentStatus'] ?? "").toString().toLowerCase();
 
-    final invoiceUrl =
-        data['invoicePdfUrl'] ?? "";
-
-    final createdAt =
-    data['createdAt'] as Timestamp?;
+    final createdAt = data['createdAt'] as Timestamp?;
 
     final dateText = createdAt != null
         ? DateFormat.yMMMd().format(createdAt.toDate())
@@ -46,14 +41,10 @@ class _ClientInvoiceListScreenState
     final matchSearch =
     dateText.toLowerCase().contains(searchText.toLowerCase());
 
-    final matchStatus = filterStatus == "all"
-        ? true
-        : status == filterStatus;
+    final matchStatus =
+        filterStatus == "all" || paymentStatus == filterStatus;
 
-    // Only show invoices having PDF
-    final hasInvoice = invoiceUrl.toString().isNotEmpty;
-
-    return matchSearch && matchStatus && hasInvoice;
+    return matchSearch && matchStatus;
   }
 
   // ======================
@@ -62,12 +53,24 @@ class _ClientInvoiceListScreenState
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
-
       appBar: AppBar(
-        title: const Text("My Invoices"),
         backgroundColor: AppColors.darkBlue,
+        elevation: 0,
+
+        // 👈 back arrow & menu icon color
+        iconTheme: const IconThemeData(
+          color: Colors.white,
+        ),
+
+        // 👈 title text color
+        title: const Text(
+          "My Invoices",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
 
       body: Column(
@@ -77,7 +80,6 @@ class _ClientInvoiceListScreenState
 
           Padding(
             padding: const EdgeInsets.all(12),
-
             child: Row(
               children: [
 
@@ -88,7 +90,6 @@ class _ClientInvoiceListScreenState
                       prefixIcon: Icon(Icons.search),
                       border: OutlineInputBorder(),
                     ),
-
                     onChanged: (val) {
                       setState(() => searchText = val);
                     },
@@ -99,15 +100,11 @@ class _ClientInvoiceListScreenState
 
                 DropdownButton<String>(
                   value: filterStatus,
-
                   items: const [
-                    DropdownMenuItem(
-                        value: "all", child: Text("All")),
-                    DropdownMenuItem(
-                        value: "payment_done",
-                        child: Text("Paid")),
+                    DropdownMenuItem(value: "all", child: Text("All")),
+                    DropdownMenuItem(value: "paid", child: Text("Paid")),
+                    DropdownMenuItem(value: "unpaid", child: Text("Unpaid")),
                   ],
-
                   onChanged: (val) {
                     setState(() => filterStatus = val!);
                   },
@@ -120,13 +117,11 @@ class _ClientInvoiceListScreenState
 
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-
               stream: FirebaseFirestore.instance
-                  .collection("quotations")
+                  .collection("invoices")
                   .where("clientId", isEqualTo: uid)
                   .orderBy("createdAt", descending: true)
                   .snapshots(),
-
               builder: (context, snapshot) {
 
                 if (snapshot.connectionState ==
@@ -151,66 +146,90 @@ class _ClientInvoiceListScreenState
 
                 return ListView.builder(
                   itemCount: invoices.length,
-
                   itemBuilder: (context, index) {
 
                     final inv = invoices[index];
                     final data =
                     inv.data() as Map<String, dynamic>;
 
-                    final amount =
-                        data['quotationAmount'] ?? 0;
+                    final Timestamp? createdAt =
+                    data['createdAt'];
 
-                    final createdAt =
-                    data['createdAt'] as Timestamp;
+                    final String pdfUrl =
+                        data['pdfUrl'] ?? "";
 
-                    final invoiceUrl =
-                    data['invoicePdfUrl'];
+                    final String paymentStatus =
+                    (data['paymentStatus'] ?? "").toLowerCase();
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
-
                       child: ListTile(
 
-                        leading: const Icon(
+                        leading: Icon(
                           Icons.receipt_long,
-                          color: Colors.green,
+                          color: paymentStatus == "paid"
+                              ? Colors.green
+                              : Colors.orange,
                         ),
 
                         title: Text(
-                          "₹ $amount",
+                          "Invoice #${data['invoiceNumber'] ?? inv.id}",
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
 
-                        subtitle: Text(
-                          DateFormat.yMMMd()
-                              .format(createdAt.toDate()),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+
+                            if (createdAt != null)
+                              Text(
+                                DateFormat.yMMMd()
+                                    .format(createdAt.toDate()),
+                              ),
+
+                            const SizedBox(height: 4),
+
+                            Text(
+                              paymentStatus.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: paymentStatus == "paid"
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
+                            ),
+                          ],
                         ),
 
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
 
-                            IconButton(
-                              icon: const Icon(Icons.visibility),
-                              onPressed: () {
-                                PdfUtils.openPdf(invoiceUrl);
-                              },
-                            ),
+                            // IconButton(
+                            //   icon: const Icon(Icons.visibility),
+                            //   onPressed: pdfUrl.isEmpty
+                            //       ? null
+                            //       : () {
+                            //     PdfUtils.openPdf(pdfUrl);
+                            //   },
+                            // ),
 
-                            IconButton(
-                              icon: const Icon(Icons.download),
-                              onPressed: () async {
-                                await PdfUtils.downloadPdf(
-                                  url: invoiceUrl,
-                                  fileName:
-                                  "Invoice_${inv.id}",
-                                );
-                              },
-                            ),
+                            // IconButton(
+                            //   icon: const Icon(Icons.download),
+                            //   onPressed: pdfUrl.isEmpty
+                            //       ? null
+                            //       : () async {
+                            //     await PdfUtils.downloadPdf(
+                            //       url: pdfUrl,
+                            //       fileName:
+                            //       "Invoice_${inv.id}",
+                            //     );
+                            //   },
+                            // ),
                           ],
                         ),
                       ),

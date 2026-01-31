@@ -5,7 +5,6 @@ import 'package:firebase_core/firebase_core.dart';
 
 import '../../core/theme/app_colors.dart';
 
-
 class CreateClientScreen extends StatefulWidget {
   const CreateClientScreen({super.key});
 
@@ -14,6 +13,7 @@ class CreateClientScreen extends StatefulWidget {
 }
 
 class _CreateClientScreenState extends State<CreateClientScreen> {
+
   final mainAuth = FirebaseAuth.instance;
   final firestore = FirebaseFirestore.instance;
 
@@ -60,15 +60,25 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
   }
 
   Future<void> initSecondaryAuth() async {
-    final secondaryApp = await Firebase.initializeApp(
-      name: "SecondaryApp",
-      options: Firebase.app().options,
-    );
 
-    secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+    try {
+
+      final secondaryApp = await Firebase.initializeApp(
+        name: "SecondaryApp",
+        options: Firebase.app().options,
+      );
+
+      secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+
+    } catch (_) {
+
+      secondaryAuth =
+          FirebaseAuth.instanceFor(app: Firebase.app());
+    }
   }
 
   Future<void> loadSalesManagerCompany() async {
+
     final uid = mainAuth.currentUser!.uid;
 
     final snap = await firestore
@@ -84,14 +94,17 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
   // ================================
 
   Future<void> createClient() async {
+
     if (emailCtrl.text.isEmpty ||
         companyNameCtrl.text.isEmpty ||
         firstNameCtrl.text.isEmpty) {
+
       showMsg("Please fill required fields");
       return;
     }
 
     try {
+
       setState(() => loading = true);
 
       final userCred =
@@ -103,6 +116,7 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
       final clientUid = userCred.user!.uid;
 
       await firestore.collection("clients").doc(clientUid).set({
+
         "companyId": companyId,
 
         "socialSecurityNumber": ssnCtrl.text.trim(),
@@ -134,12 +148,20 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
       await secondaryAuth!
           .sendPasswordResetEmail(email: emailCtrl.text.trim());
 
+      if (!mounted) return;
+
       showMsg("Client created successfully & reset link sent");
       Navigator.pop(context);
+
     } catch (e) {
+
       showMsg("Error: ${e.toString()}");
+
     } finally {
-      setState(() => loading = false);
+
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -154,24 +176,28 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
+
       appBar: AppBar(
-        backgroundColor: AppColors.darkBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
           "Create Client",
           style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.normal,
+            fontWeight: FontWeight.bold, // ✅ bold title
           ),
         ),
+        backgroundColor: AppColors.darkBlue,
+        foregroundColor: Colors.white, // ✅ affects title + back arrow
       ),
+
 
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
+
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+
             sectionTitle("Company Info"),
             input(companyNameCtrl, "Company Name"),
             input(customerCodeCtrl, "Customer Code"),
@@ -204,12 +230,15 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
 
             SizedBox(
               width: double.infinity,
+
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.darkBlue,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
+
                 onPressed: loading ? null : createClient,
+
                 child: loading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
@@ -232,10 +261,13 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
   // ================================
 
   Widget input(TextEditingController ctrl, String label) {
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
+
       child: TextField(
         controller: ctrl,
+
         decoration: InputDecoration(
           labelText: label,
           border: OutlineInputBorder(
@@ -247,8 +279,10 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
   }
 
   Widget sectionTitle(String title) {
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
+
       child: Text(
         title,
         style: const TextStyle(
@@ -265,6 +299,7 @@ class _CreateClientScreenState extends State<CreateClientScreen> {
 
   @override
   void dispose() {
+
     companyNameCtrl.dispose();
     firstNameCtrl.dispose();
     lastNameCtrl.dispose();

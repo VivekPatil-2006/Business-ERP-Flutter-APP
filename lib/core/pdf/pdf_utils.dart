@@ -9,8 +9,8 @@ class PdfUtils {
   // OPEN PDF
   // -----------------------
 
-  static Future<void> openPdf(String url) async {
-    await OpenFilex.open(url);
+  static Future<void> openPdf(String filePath) async {
+    await OpenFilex.open(filePath);
   }
 
   // -----------------------
@@ -25,6 +25,10 @@ class PdfUtils {
   }) async {
 
     final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode != 200) {
+      throw Exception("Failed to download file");
+    }
 
     final directory = await getApplicationDocumentsDirectory();
 

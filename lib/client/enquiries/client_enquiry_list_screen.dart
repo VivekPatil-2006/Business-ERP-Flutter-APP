@@ -23,9 +23,7 @@ class _ClientEnquiryListScreenState
 
   String filterStatus = "all";
 
-  // ======================
-  // STATUS COLOR
-  // ======================
+  // ================= STATUS COLOR =================
 
   Color getStatusColor(String status) {
     switch (status) {
@@ -33,16 +31,12 @@ class _ClientEnquiryListScreenState
         return Colors.orange;
       case "quoted":
         return Colors.blue;
-      case "closed":
-        return Colors.green;
       default:
         return Colors.grey;
     }
   }
 
-  // ======================
-  // DYNAMIC TITLE
-  // ======================
+  // ================= APP BAR TITLE =================
 
   String getAppBarTitle() {
     switch (filterStatus) {
@@ -50,11 +44,34 @@ class _ClientEnquiryListScreenState
         return "Raised Enquiries";
       case "quoted":
         return "Quoted Enquiries";
-      case "closed":
-        return "Closed Enquiries";
       default:
         return "My Enquiries";
     }
+  }
+
+  // ================= STATUS CHIP =================
+
+  Widget statusChip(String status) {
+
+    final color = getStatusColor(status);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
   }
 
   @override
@@ -67,31 +84,47 @@ class _ClientEnquiryListScreenState
       // ================= APP BAR =================
 
       appBar: AppBar(
-        title: Text(getAppBarTitle()),
         backgroundColor: AppColors.darkBlue,
+        elevation: 0,
+
+        // 👈 Back arrow
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
+
+        // 👈 Title in white
+        title: Text(
+          getAppBarTitle(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+
+        // 👈 Ensures icons are white
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
 
-      // ================= FLOATING + BUTTON =================
+
+      // ================= CREATE BUTTON =================
 
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.darkBlue,
+
         child: const Icon(Icons.add, color: Colors.white),
 
-        onPressed: () async {
-
-          await Navigator.push(
+        onPressed: () {
+          Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => const CreateClientEnquiryScreen(),
             ),
           );
-
-          // Refresh list after returning
-          setState(() {});
         },
       ),
-
-      // ================= BODY =================
 
       body: Column(
         children: [
@@ -99,52 +132,56 @@ class _ClientEnquiryListScreenState
           // ================= FILTER BAR =================
 
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: Colors.white,
 
             child: Row(
               children: [
 
-                const Text(
-                  "Filter:",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+                const Icon(Icons.filter_alt, size: 20),
 
                 const SizedBox(width: 10),
 
-                DropdownButton<String>(
-                  value: filterStatus,
-                  underline: const SizedBox(),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
 
-                  items: const [
+                    value: filterStatus,
 
-                    DropdownMenuItem(
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+
+                    items: const [
+
+                      DropdownMenuItem(
                         value: "all",
-                        child: Text("All")),
+                        child: Text("All Enquiries"),
+                      ),
 
-                    DropdownMenuItem(
+                      DropdownMenuItem(
                         value: "raised",
-                        child: Text("Raised")),
+                        child: Text("Raised"),
+                      ),
 
-                    DropdownMenuItem(
+                      DropdownMenuItem(
                         value: "quoted",
-                        child: Text("Quoted")),
+                        child: Text("Quoted"),
+                      ),
+                    ],
 
-                    DropdownMenuItem(
-                        value: "closed",
-                        child: Text("Closed")),
-                  ],
-
-                  onChanged: (val) {
-                    setState(() => filterStatus = val!);
-                  },
+                    onChanged: (val) {
+                      setState(() => filterStatus = val!);
+                    },
+                  ),
                 ),
               ],
             ),
           ),
 
-          // ================= LIST =================
+          // ================= REALTIME LIST =================
 
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -157,21 +194,29 @@ class _ClientEnquiryListScreenState
 
               builder: (context, snapshot) {
 
-                // -------- LOADING --------
+                // ---------- LOADING ----------
+
                 if (snapshot.connectionState ==
                     ConnectionState.waiting) {
+
                   return const Center(
-                      child: CircularProgressIndicator());
+                    child: CircularProgressIndicator(),
+                  );
                 }
 
-                // -------- EMPTY --------
+                // ---------- EMPTY ----------
+
                 if (!snapshot.hasData ||
                     snapshot.data!.docs.isEmpty) {
+
                   return const Center(
-                      child: Text("No Enquiries Found"));
+                    child: Text("No Enquiries Found"),
+                  );
                 }
 
                 final docs = snapshot.data!.docs;
+
+                // ---------- FILTER ----------
 
                 final filtered = filterStatus == "all"
                     ? docs
@@ -181,11 +226,16 @@ class _ClientEnquiryListScreenState
 
                 if (filtered.isEmpty) {
                   return const Center(
-                      child: Text("No matching enquiries"));
+                    child: Text("No Matching Enquiries"),
+                  );
                 }
 
+                // ---------- LIST ----------
+
                 return ListView.builder(
-                  padding: const EdgeInsets.all(12),
+
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+
                   itemCount: filtered.length,
 
                   itemBuilder: (context, index) {
@@ -197,129 +247,120 @@ class _ClientEnquiryListScreenState
                     final status =
                         data['status'] ?? "raised";
 
-                    final createdAt =
-                    (data['createdAt'] as Timestamp)
-                        .toDate();
+                    final Timestamp ts =
+                        data['createdAt'] ?? Timestamp.now();
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
+                    final createdAt = ts.toDate();
 
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius:
-                        BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black
-                                .withOpacity(0.05),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
+                    return InkWell(
 
-                      child: ListTile(
+                      borderRadius: BorderRadius.circular(14),
 
-                        contentPadding:
-                        const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12),
+                      onTap: () {
 
-                        // -------- ICON --------
-
-                        leading: CircleAvatar(
-                          radius: 22,
-                          backgroundColor:
-                          getStatusColor(status)
-                              .withOpacity(0.15),
-
-                          child: Icon(
-                            Icons.assignment,
-                            color:
-                            getStatusColor(status),
-                          ),
-                        ),
-
-                        // -------- TITLE --------
-
-                        title: Text(
-                          data['title'] ?? "",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-
-                        // -------- SUBTITLE --------
-
-                        subtitle: Padding(
-                          padding:
-                          const EdgeInsets.only(top: 6),
-
-                          child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
-
-                            children: [
-
-                              Text(
-                                data['description'] ?? "",
-                                maxLines: 1,
-                                overflow:
-                                TextOverflow.ellipsis,
-                              ),
-
-                              const SizedBox(height: 6),
-
-                              Text(
-                                "Created: ${DateFormat.yMMMd().format(createdAt)}",
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ClientEnquiryDetailsScreen(
+                                  enquiryId: e.id,
                                 ),
+                          ),
+                        );
+                      },
+
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+
+                        padding: const EdgeInsets.all(14),
+
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              blurRadius: 6,
+                              color: Colors.black.withOpacity(0.05),
+                            ),
+                          ],
+                        ),
+
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+
+                          children: [
+
+                            // -------- ICON --------
+
+                            CircleAvatar(
+                              radius: 22,
+
+                              backgroundColor:
+                              getStatusColor(status)
+                                  .withOpacity(0.15),
+
+                              child: Icon(
+                                Icons.assignment,
+                                color: getStatusColor(status),
                               ),
-                            ],
-                          ),
-                        ),
-
-                        // -------- STATUS BADGE --------
-
-                        trailing: Container(
-                          padding:
-                          const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4),
-
-                          decoration: BoxDecoration(
-                            color: getStatusColor(status)
-                                .withOpacity(0.12),
-                            borderRadius:
-                            BorderRadius.circular(20),
-                          ),
-
-                          child: Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color:
-                              getStatusColor(status),
                             ),
-                          ),
-                        ),
 
-                        // -------- OPEN DETAILS --------
+                            const SizedBox(width: 12),
 
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  ClientEnquiryDetailsScreen(
-                                    enquiryId: e.id,
+                            // -------- CONTENT --------
+
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+
+                                children: [
+
+                                  Text(
+                                    data['title'] ?? "Enquiry",
+
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
+
+                                  const SizedBox(height: 6),
+
+                                  Row(
+                                    children: [
+
+                                      const Icon(
+                                        Icons.calendar_today,
+                                        size: 13,
+                                        color: Colors.grey,
+                                      ),
+
+                                      const SizedBox(width: 6),
+
+                                      Text(
+                                        DateFormat.yMMMd()
+                                            .format(createdAt),
+
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          );
-                        },
+
+                            // -------- STATUS --------
+
+                            statusChip(status),
+                          ],
+                        ),
                       ),
                     );
                   },
