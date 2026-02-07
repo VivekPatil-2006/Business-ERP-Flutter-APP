@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "91516715113",
+    "project_id": "businesserp-7da69",
+    "storage_bucket": "businesserp-7da69.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:91516715113:android:ec23681dca469a3610a2f8",
+        "android_client_info": {
+          "package_name": "com.example.dealtrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDZgUhqPrbtsLk7tT6N8ugImT0hzyHCdU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:91516715113:android:b78355c7b89a4ccc10a2f8",
+        "android_client_info": {
+          "package_name": "com.example.dealtrackuser"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDZgUhqPrbtsLk7tT6N8ugImT0hzyHCdU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
